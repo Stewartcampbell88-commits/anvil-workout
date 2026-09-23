@@ -107,21 +107,25 @@ function bw(id,name,sets,reps,rest,block,extra={}) {
   return {id,name,sets,reps,rest,weight:0, bw:true, block, ...extra};
 }
 
-const ANVIL_DAY = [
-  bb("squat","Barbell squat",3,8,120,"Main"),
-  bb("rdl","Barbell RDL",3,8,120,"Main"),
-  bb("ohp","Barbell OHP",3,8,90,"Main"),
-  bb("row","Barbell row",3,8,90,"Superset A · row + push-up"),
-  bw("pu","Push-ups",3,20,75,"Superset A · row + push-up",{nocap:true}),
-  bw("lunge","Bulgarian split squat",3,8,75,"Superset B · split squat + back ext",{cap:12,bilateral:true}),
-  bw("bext","Back extension",3,10,75,"Superset B · split squat + back ext",{cap:14}),
-  bw("abd","Side-lying abduction",3,12,45,"Superset C · abduction + psoas",{cap:16,bilateral:true,note:"Extra on the right"}),
-  bw("psoas","Psoas march",3,8,45,"Superset C · abduction + psoas",{cap:12,bilateral:true}),
-  bw("lmr","Landmine rotation",3,8,60,"Finisher",{cap:12,bilateral:true}),
-];
-
 const PROGRAMS = [
-  {id:"anvil", name:"ANVIL", blurb:"3× week full-body. Your original session.", days:[{label:"Session", exercises:ANVIL_DAY}]},
+  {id:"anvil", name:"ANVIL", blurb:"2× week whole-body. A/B split. Bench not push-ups. Heaves on B.", days:[
+    {label:"A", exercises:[
+      bb("squat","Barbell squat",3,8,120,"Day A"),
+      bb("bench","Barbell bench",3,8,120,"Day A"),
+      bb("row","Barbell row",3,8,90,"Day A"),
+      bw("bext","Back extension",3,10,75,"Day A",{cap:14}),
+      bw("abd","Side-lying abduction",3,12,45,"Day A",{cap:16,bilateral:true,note:"Extra on the right"}),
+      bb("farmer","Farmer carry",3,40,60,"Day A",{cap:60,note:"Seconds per set. Walk tall, ribs down."}),
+    ]},
+    {label:"B", exercises:[
+      bb("rdl","Barbell RDL",3,8,120,"Day B"),
+      bb("ohp","Barbell OHP",3,8,90,"Day B"),
+      bw("lunge","Bulgarian split squat",3,8,75,"Day B",{cap:12,bilateral:true}),
+      bw("psoas","Psoas march",3,8,45,"Day B",{cap:12,bilateral:true}),
+      bw("lmr","Landmine rotation",3,8,60,"Day B",{cap:12,bilateral:true}),
+      bw("heaves","Heaves",3,6,120,"Day B",{nocap:true,note:"Pull-ups or chin-ups. Clean reps; assist if needed."}),
+    ]},
+  ]},
   {id:"titan", name:"TITAN PROTOCOL", blurb:"Marcus · 3×10 full-body. Mon / Wed / Fri. Rest 45–60s.", days:[{label:"Session", exercises:[
     bb("tp-squat","Squats",3,10,60,"Mon / Wed / Fri · 3 × 10",{weight:0,cap:16,note:"Feet shoulder-width. Sit back, knees track toes, stand tall."}),
     bw("tp-pushup","Push-ups",3,10,60,"Mon / Wed / Fri · 3 × 10",{nocap:true,note:"Hands under shoulders. Body rigid. Chest to floor, lock out."}),
@@ -613,9 +617,7 @@ function render(){
   const doneSets = state.exercises.reduce((n,ex) => n + (ex.skipped ? ex.sets : ex.setsLog.filter(s=>s.ok||s.miss).length), 0);
   const totalSets = state.exercises.reduce((n,ex) => n+ex.sets, 0);
   const inSession = new Set(state.exercises.map(e=>e.id));
-  const sub = program.id==="anvil"
-    ? `3× week · ${doneSets}/${totalSets} sets`
-    : `${program.name}${program.days.length>1 ? ` · ${program.days[state.dayIndex]?.label}` : ""} · ${doneSets}/${totalSets} sets`;
+  const sub = `${program.name}${program.days.length>1 ? ` · ${program.days[state.dayIndex]?.label}` : ""} · ${doneSets}/${totalSets} sets`;
 
   let lastBlock = "";
   const cards = state.exercises.map((ex, ei) => {
