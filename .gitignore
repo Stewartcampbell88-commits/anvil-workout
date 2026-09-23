@@ -1,0 +1,23 @@
+# Android signing secrets — never commit
+android/*.keystore
+android/*.jks
+android/*.pass
+android/*.pem
+android/*.pk8
+
+# Build outputs
+dist/
+*.apk
+*.apks
+*.aab
+
+# Local apktool decode / build scratch (optional local use)
+/apktool-out/
+/anvil-apk-decoded/
+/anvil-build/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*~
