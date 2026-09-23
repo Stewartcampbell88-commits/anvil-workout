@@ -46,6 +46,10 @@ After signing, verify with:
 apksigner verify --print-certs dist/anvil-workout.apk
 ```
 
-The SHA-256 digest of the certificate created for this rebuild is recorded in the commit message / release notes for that build. Original (pre-migration) cert SHA-256 was:
+Original (pre-migration) cert SHA-256:
 
 `c980c01f1fe673b1ab42329da2917c1cf37316c076b4fd4603bdc0c4fe682ae8`
+
+This keystore (`anvil-release.keystore`) cert SHA-256:
+
+`37c2a0f416f4f8dc525b36782b4109be6e49539dc1fac9b5ec2a1926e08820a7`
