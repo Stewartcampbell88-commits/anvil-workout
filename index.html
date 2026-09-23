@@ -86,6 +86,11 @@
     .tiny { font-size:0.75rem; font-weight:700; letter-spacing:0.16em; text-transform:uppercase; color:var(--muted); }
     .space { margin-top:0.75rem; }
     .help { background:var(--inset); border-radius:1rem; padding:0.75rem 1rem; margin-top:0.75rem; font-size:0.875rem; color:var(--muted); line-height:1.45; }
+
+    .vol-row { display:flex; align-items:center; gap:0.75rem; margin-top:0.5rem; }
+    .vol-row input[type=range] { flex:1; min-width:0; height:2rem; accent-color:var(--primary); }
+    .vol-lab { min-width:3rem; text-align:right; font-weight:700; font-variant-numeric:tabular-nums; font-size:0.875rem; }
+    .cue-list { display:grid; gap:0.5rem; margin-top:0.5rem; }
   </style>
 </head>
 <body>
@@ -283,6 +288,7 @@ const I = {
   minus: `<svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>`,
   phone: `<svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>`,
   reset: `<svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>`,
+  sound: `<svg viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a9 9 0 0 1 0 14"/></svg>`,
 };
 
 let ctx = null;
@@ -299,14 +305,63 @@ function unlockAudio(){
     if (ctx.state === "suspended") ctx.resume();
   } catch { ctx = null; }
 }
+const CUE_PACKS = {
+  classic: { id:"classic", name:"Classic", blurb:"3 · 2 · 1 · Go", countdown:{3:"3",2:"2",1:"1"}, go:"Go", rate:1.05, pitch:1 },
+  coach:   { id:"coach",   name:"Coach",   blurb:"Three · Two · One · Go time", countdown:{3:"Three",2:"Two",1:"One"}, go:"Go time", rate:0.95, pitch:1 },
+  drive:   { id:"drive",   name:"Drive",   blurb:"Three · Two · One · Hit it", countdown:{3:"Three",2:"Two",1:"One"}, go:"Hit it", rate:1.1, pitch:1 },
+  calm:    { id:"calm",    name:"Calm",    blurb:"Three · Two · One · Begin", countdown:{3:"Three",2:"Two",1:"One"}, go:"Begin", rate:0.9, pitch:0.9 },
+  beeps:   { id:"beeps",   name:"Beeps only", blurb:"Beeps + vibrate · no voice", countdown:null, go:null, rate:1, pitch:1, silent:true },
+};
+function getCuePack(){
+  return CUE_PACKS[state.cuePack] || CUE_PACKS.classic;
+}
 function beep(freq, dur){
   if (!ctx) return;
+  const vol = Math.max(0, Math.min(1, Number(state.soundVolume) || 0));
+  if (vol <= 0) return;
   const o = ctx.createOscillator(), g = ctx.createGain();
-  o.type = "square"; o.frequency.value = freq; g.gain.value = 0.08;
+  o.type = "square"; o.frequency.value = freq;
+  g.gain.value = vol * 0.12;
   o.connect(g); g.connect(ctx.destination); o.start(); o.stop(ctx.currentTime + dur);
 }
-function speak(text){
-  try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; speechSynthesis.speak(u); } catch {}
+function speak(text, opts){
+  const vol = Math.max(0, Math.min(1, Number(state.soundVolume) || 0));
+  if (!text || vol <= 0) return;
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    const pack = getCuePack();
+    u.rate = (opts && opts.rate != null) ? opts.rate : (pack.rate ?? 1.05);
+    u.pitch = (opts && opts.pitch != null) ? opts.pitch : (pack.pitch ?? 1);
+    u.volume = vol;
+    speechSynthesis.speak(u);
+  } catch {}
+}
+function speakCountdown(n){
+  const pack = getCuePack();
+  if (pack.silent || !pack.countdown) return;
+  const phrase = pack.countdown[n];
+  if (phrase) speak(phrase);
+}
+function speakGo(){
+  const pack = getCuePack();
+  if (pack.silent || !pack.go) return;
+  speak(pack.go);
+}
+function previewSound(){
+  unlockAudio();
+  const pack = getCuePack();
+  beep(880, 0.12);
+  if (pack.silent) {
+    setTimeout(() => { beep(523,0.12); setTimeout(() => beep(784,0.22), 140); }, 350);
+    toast("Beeps only", "No voice cues");
+    return;
+  }
+  speakCountdown(3);
+  setTimeout(() => {
+    beep(523,0.12); setTimeout(() => beep(784,0.22), 140);
+    speakGo();
+  }, 700);
 }
 
 let state = {
@@ -315,6 +370,8 @@ let state = {
   exercises: seedProgram("anvil", 0),
   history: [],
   liftProgress: {},
+  soundVolume: 0.7,
+  cuePack: "classic",
 };
 let ui = { remain:0, running:false, isGo:false, panel:"none", pending:null, pickSets:3, pickReps:8, installHint:false, installed:false, toastTimer:null };
 let remainVal = 0, lastCue = -1, tick = null, deferredInstall = null;
@@ -331,6 +388,14 @@ window.addEventListener("appinstalled", () => {
   render();
 });
 
+function clampVolume(v){
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0.7;
+  return Math.max(0, Math.min(1, n));
+}
+function normalizeCuePack(id){
+  return CUE_PACKS[id] ? id : "classic";
+}
 function load(){
   try {
     const raw = JSON.parse(localStorage.getItem(STORAGE) || "null");
@@ -344,6 +409,8 @@ function load(){
       liftProgress,
       exercises: applyProgress(hydrate(raw.exercises) || seedProgram(program.id, dayIndex), liftProgress),
       history: raw.history || [],
+      soundVolume: clampVolume(raw.soundVolume ?? 0.7),
+      cuePack: normalizeCuePack(raw.cuePack),
     };
   } catch {}
 }
@@ -351,6 +418,7 @@ function save(){
   localStorage.setItem(STORAGE, JSON.stringify({
     programId: state.programId, dayIndex: state.dayIndex,
     exercises: state.exercises, history: state.history, liftProgress: state.liftProgress,
+    soundVolume: clampVolume(state.soundVolume), cuePack: normalizeCuePack(state.cuePack),
   }));
 }
 
@@ -358,6 +426,7 @@ function backupPayload(){
   return {
     programId: state.programId, dayIndex: state.dayIndex,
     exercises: state.exercises, history: state.history, liftProgress: state.liftProgress,
+    soundVolume: clampVolume(state.soundVolume), cuePack: normalizeCuePack(state.cuePack),
   };
 }
 
@@ -368,7 +437,9 @@ function looksLikeAppState(obj){
   if (obj.liftProgress !== undefined && (typeof obj.liftProgress !== "object" || obj.liftProgress === null || Array.isArray(obj.liftProgress))) return false;
   if (obj.programId !== undefined && typeof obj.programId !== "string") return false;
   if (obj.dayIndex !== undefined && typeof obj.dayIndex !== "number") return false;
-  return Array.isArray(obj.exercises) || Array.isArray(obj.history) || typeof obj.programId === "string" || (obj.liftProgress && typeof obj.liftProgress === "object");
+  if (obj.soundVolume !== undefined && typeof obj.soundVolume !== "number") return false;
+  if (obj.cuePack !== undefined && typeof obj.cuePack !== "string") return false;
+  return Array.isArray(obj.exercises) || Array.isArray(obj.history) || typeof obj.programId === "string" || (obj.liftProgress && typeof obj.liftProgress === "object") || typeof obj.soundVolume === "number" || typeof obj.cuePack === "string";
 }
 
 function exportBackup(){
@@ -407,6 +478,8 @@ function importBackup(){
         exercises: Array.isArray(raw.exercises) ? raw.exercises : [],
         history: Array.isArray(raw.history) ? raw.history : [],
         liftProgress: raw.liftProgress && typeof raw.liftProgress === "object" ? raw.liftProgress : {},
+        soundVolume: clampVolume(raw.soundVolume ?? 0.7),
+        cuePack: normalizeCuePack(raw.cuePack),
       }));
       load();
       stopRest();
@@ -598,14 +671,14 @@ function cueGo(){
   ui.running = false; ui.isGo = true; ui.remain = 0; remainVal = 0;
   beep(523,0.12); setTimeout(() => beep(784,0.22), 140);
   if (navigator.vibrate) navigator.vibrate([180,70,180,70,280]);
-  speak("Go"); render();
+  speakGo(); render();
 }
 function startRest(sec){
   clearTick(); lastCue = -1; ui.isGo = false; remainVal = sec; ui.remain = sec; ui.running = true; render();
   tick = setInterval(() => {
     remainVal -= 1;
     const r = remainVal;
-    if ((r===3||r===2||r===1) && lastCue !== r) { lastCue = r; beep(880,0.12); if (navigator.vibrate) navigator.vibrate(80); speak(String(r)); }
+    if ((r===3||r===2||r===1) && lastCue !== r) { lastCue = r; beep(880,0.12); if (navigator.vibrate) navigator.vibrate(80); speakCountdown(r); }
     if (r <= 0) { clearTick(); cueGo(); return; }
     ui.remain = r; renderTimerOnly();
   }, 1000);
@@ -764,6 +837,16 @@ function render(){
     }).join("")
   }</section>` : "";
 
+  const volPct = Math.round(clampVolume(state.soundVolume) * 100);
+  const sound = ui.panel==="sound" ? `<section class="panel"><p class="tiny">Sound</p>
+    <p class="tiny" style="margin-top:.75rem;letter-spacing:.08em">Volume</p>
+    <div class="vol-row"><input type="range" min="0" max="100" step="1" value="${volPct}" data-act="vol" aria-label="Sound volume" /><span class="vol-lab" data-vol-label>${volPct}%</span></div>
+    <p class="tiny" style="margin-top:.875rem;letter-spacing:.08em">Rest cues</p>
+    <div class="cue-list">${Object.values(CUE_PACKS).map(p=>`<button class="prog${p.id===state.cuePack?" on":""}" data-act="cue-pack" data-id="${p.id}"><span style="font-size:1rem;font-weight:700">${esc(p.name)}</span><span class="note" style="${p.id===state.cuePack?"opacity:.8;color:inherit":""}">${esc(p.blurb)}</span></button>`).join("")}</div>
+    <button class="split" style="width:100%;margin-top:.75rem"><span class="primary" style="display:flex;width:100%;min-height:2.75rem;border-radius:.75rem;align-items:center;justify-content:center;font-weight:700;gap:.5rem" data-act="preview-sound">${I.sound} Preview</span></button>
+    <p class="note" style="margin-top:.75rem">Cues fire on the last 3 seconds of rest. Beeps only skips voice. Volume 0 mutes beeps and speech.</p>
+  </section>` : "";
+
   const isFile = location.protocol === "file:";
   const hint = isFile
     ? `<div class="help">This file can’t stay on the home screen. Open the web link in Chrome or Safari, then tap <b style="color:var(--fg)">Install</b>.</div>`
@@ -778,6 +861,7 @@ function render(){
         </div>
         <div class="head-actions">
           ${ui.installed ? "" : `<button class="install primary" data-act="install">${I.phone} Install</button>`}
+          <button class="icon-btn" data-act="panel" data-p="sound" aria-label="Sound">${I.sound}</button>
           <button class="icon-btn" data-act="panel" data-p="programs" aria-label="Programs">${I.layers}</button>
           <button class="icon-btn" data-act="panel" data-p="history" aria-label="History">${I.clock}</button>
         </div>
@@ -795,9 +879,11 @@ function render(){
     <div class="split">
       <button class="${ui.panel==="add"?"on":""}" data-act="panel" data-p="add">${I.plus} Add</button>
       <button class="${ui.panel==="remove"?"on":""}" data-act="panel" data-p="remove">${I.minus} Remove</button>
+      <button class="${ui.panel==="sound"?"on":""}" data-act="panel" data-p="sound">${I.sound} Sound</button>
     </div>
     ${remove}
     ${add}
+    ${sound}
     <div class="split">
       <button class="primary" data-act="log">Log session</button>
       <button data-act="reset">${I.reset} Reset</button>
@@ -836,6 +922,14 @@ document.getElementById("app").addEventListener("lostpointercapture", clearSetPr
 document.getElementById("app").addEventListener("contextmenu", (e) => {
   if (e.target.closest("[data-act=set]")) e.preventDefault();
 });
+document.getElementById("app").addEventListener("input", (e) => {
+  const el = e.target.closest("[data-act=vol]");
+  if (!el) return;
+  state.soundVolume = clampVolume((+el.value) / 100);
+  save();
+  const lab = document.querySelector("[data-vol-label]");
+  if (lab) lab.textContent = `${Math.round(state.soundVolume * 100)}%`;
+});
 document.getElementById("app").addEventListener("click", (e) => {
   const btn = e.target.closest("[data-act]");
   if (!btn) return;
@@ -872,6 +966,14 @@ document.getElementById("app").addEventListener("click", (e) => {
   else if (act==="reset") resetChecks();
   else if (act==="export") exportBackup();
   else if (act==="import") importBackup();
+  else if (act==="cue-pack") { state.cuePack = normalizeCuePack(btn.dataset.id); save(); render(); }
+  else if (act==="preview-sound") previewSound();
+  else if (act==="vol") {
+    state.soundVolume = clampVolume((+btn.value) / 100);
+    save();
+    const lab = document.querySelector("[data-vol-label]");
+    if (lab) lab.textContent = `${Math.round(state.soundVolume * 100)}%`;
+  }
   else if (act==="install") {
     if (location.protocol === "file:") {
       ui.installHint = true;
@@ -896,7 +998,7 @@ try {
   render();
 } catch {
   try { localStorage.removeItem(STORAGE); } catch {}
-  state = { programId:"anvil", dayIndex:0, exercises: seedProgram("anvil", 0), history:[], liftProgress:{} };
+  state = { programId:"anvil", dayIndex:0, exercises: seedProgram("anvil", 0), history:[], liftProgress:{}, soundVolume:0.7, cuePack:"classic" };
   try { render(); } catch {}
 }
 if (location.protocol.startsWith("http") && "serviceWorker" in navigator) {
