@@ -537,8 +537,15 @@ function logSession(){
       let {reps, weight} = ex;
       if (failStreak >= 3) {
         failStreak = 0;
-        if (ex.bw) { if (reps>6) reps-=2; notes.push(`${ex.name}: RESET WEEK — reps back to ${reps}`); }
-        else {
+        if (ex.bw) {
+          if (weight > 0) {
+            weight = Math.max(0, +(weight-2.5).toFixed(1));
+            notes.push(`${ex.name}: RESET WEEK — ${weight} kg × ${reps}`);
+          } else {
+            if (reps>6) reps-=2;
+            notes.push(`${ex.name}: RESET WEEK — reps back to ${reps}`);
+          }
+        } else {
           weight = Math.max(0, +(weight-2.5).toFixed(1));
           if (ex.cap) notes.push(`${ex.name}: RESET WEEK — ${weight} kg × ${reps}`);
           else { if (reps>8) reps-=2; notes.push(`${ex.name}: RESET WEEK — ${weight} kg × ${reps}`); }
@@ -564,7 +571,7 @@ function logSession(){
         else { reps += 2; notes.push(`${ex.name}: reps → ${reps} · ${ex.levels[levelIndex]}`); }
       } else if (ex.bw) {
         if (ex.nocap || reps < (ex.cap||16)) { reps += 2; notes.push(`${ex.name}: reps → ${reps}`); }
-        else notes.push(`${ex.name}: cap — add load`);
+        else { weight = +(weight+2.5).toFixed(1); notes.push(`${ex.name}: +2.5kg → ${weight}`); }
       } else if (ex.cap && reps >= ex.cap) { weight = +(weight+2.5).toFixed(1); notes.push(`${ex.name}: +2.5kg → ${weight}`); }
       else if (reps >= 12) { reps = 8; weight = +(weight+2.5).toFixed(1); notes.push(`${ex.name}: +2.5kg → ${weight}, reps 8`); }
       else { reps += 2; notes.push(`${ex.name}: reps → ${reps}`); }
@@ -682,16 +689,17 @@ function render(){
     const remainText = isActive ? timeText : fmtTime(ex.rest);
     const tClass = isActive ? timeClass : "";
     const level = ex.levels?.length ? ex.levels[ex.levelIndex??0] : null;
-    const load = ex.levels?.length
-      ? `<button class="icon-btn" data-act="level" data-i="${ei}" data-d="-1" aria-label="Easier height">${I.minus}</button>
-         <span class="level">${esc(level)}</span>
-         <button class="icon-btn" data-act="level" data-i="${ei}" data-d="1" aria-label="Harder height">${I.plus}</button>`
-      : ex.bw
-        ? `<span class="muted" style="font-size:.875rem;font-weight:500">BW</span>`
-        : `<button class="icon-btn" data-act="weight" data-i="${ei}" data-d="-2.5" aria-label="Decrease weight">${I.minus}</button>
+    const weightCtrl = `<button class="icon-btn" data-act="weight" data-i="${ei}" data-d="-2.5" aria-label="Decrease weight">${I.minus}</button>
            <span class="kg">${ex.weight}</span>
            <button class="icon-btn" data-act="weight" data-i="${ei}" data-d="2.5" aria-label="Increase weight">${I.plus}</button>
            <span class="muted" style="font-size:.875rem">kg</span>`;
+    const load = ex.levels?.length
+      ? `<button class="icon-btn" data-act="level" data-i="${ei}" data-d="-1" aria-label="Easier height">${I.minus}</button>
+         <span class="level">${esc(level)}</span>
+         <button class="icon-btn" data-act="level" data-i="${ei}" data-d="1" aria-label="Harder height">${I.plus}</button>
+         <span style="flex-basis:100%;height:0" aria-hidden="true"></span>
+         ${weightCtrl}`
+      : weightCtrl;
     const sets = ex.skipped ? "" : `<div class="sets${tight?" tight":""}">${ex.setsLog.map((log,si) => {
       const logged = log.ok || log.miss;
       const shown = logged ? (log.reps ?? ex.reps) : ex.reps;
@@ -798,7 +806,7 @@ function render(){
       <button data-act="export">Export</button>
       <button data-act="import">Import</button>
     </div>
-    <p class="foot">Tap a set to log the target, then tap again to add reps up to the cap (or soft max). Tap at max clears the set. Long-press a set for a miss (below target); tap a miss to drop reps, then clear. Leave a lift blank or skip — it won’t count. All sets clean above target → next session uses that min. Exactly at target: 3 clean → +2 reps (or +2.5 kg on 5×5-style lifts). 3 short sessions → reset week.</p>
+    <p class="foot">Tap a set to log the target, then tap again to add reps up to the cap (or soft max). Tap at max clears the set. Long-press a set for a miss (below target); tap a miss to drop reps, then clear. Leave a lift blank or skip — it won’t count. All sets clean above target → next session uses that min. Exactly at target: 3 clean → +2 reps (or +2.5 kg at cap / on 5×5-style lifts; bodyweight lifts use the same kg steppers for added load). 3 short sessions → reset week (drop kg first if loaded).</p>
   `;
 }
 
