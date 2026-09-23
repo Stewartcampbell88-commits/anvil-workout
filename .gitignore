@@ -21,3 +21,7 @@ dist/
 Thumbs.db
 *.swp
 *~
+
+# Local TTS tooling
+.venv-tts/
+.venv/

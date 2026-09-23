@@ -1,5 +1,19 @@
-const CACHE = "anvil-v11";
-const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon.svg"];
+const CACHE = "anvil-v12";
+const SHELL = [
+  "./",
+  "./index.html",
+  "./manifest.json",
+  "./icon-192.png",
+  "./icon-512.png",
+  "./icon.svg",
+  "./sounds/three.mp3",
+  "./sounds/two.mp3",
+  "./sounds/one.mp3",
+  "./sounds/go-coach.mp3",
+  "./sounds/go-aussie.mp3",
+  "./sounds/go-rude.mp3",
+  "./sounds/go-adult.mp3",
+];
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL).catch(() => c.addAll(["./", "./index.html"]))));
   self.skipWaiting();
