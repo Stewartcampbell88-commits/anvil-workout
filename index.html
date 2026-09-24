@@ -157,14 +157,14 @@ const PROGRAMS = [
   {id:"ember", name:"EMBER", blurb:"Beginner 3× week. Two sets. A B A, then B A B.", days:[
     {label:"A", exercises:[
       bb("em-squat","Squats",2,6,75,"Day A",{weight:0,cap:12,note:"Sit to a chair if needed. Hold a plate when 12 is easy."}),
-      bw("em-push","Push-ups",2,5,60,"Day A",{cap:10,levels:PUSH_LEVELS,levelIndex:0,note:"Hands on the surface. Step the height down when 10 reps are easy."}),
+      bb("em-bench","Barbell bench",2,6,90,"Day A",{weight:20,cap:10,note:"Empty bar first if needed. Feet planted, lower to chest, press up."}),
       bb("em-row","Bent-over row",2,8,60,"Day A",{weight:2.5,cap:14,note:"2.5 kg plates. Hinge, pull to ribs, lower slow."}),
       bw("em-deadbug","Dead bug",2,6,45,"Day A",{bilateral:true,cap:12,note:"Lower back glued to the floor. Opposite arm and leg."}),
     ]},
     {label:"B", exercises:[
       bb("em-rdl","Plate RDL",2,6,75,"Day B",{weight:2.5,cap:12,note:"2.5 kg plates in both hands. Soft knees, hips back, flat back."}),
       bb("em-press","Shoulder press",2,6,60,"Day B",{weight:2.5,cap:12,note:"2.5 kg plates. Press overhead, don’t shrug."}),
-      bw("em-pulldown","Band pulldown",2,8,60,"Day B",{cap:14,note:"Loop the band over the rack. Elbows to ribs."}),
+      bw("em-heaves","Heaves (feet assisted)",2,5,90,"Day B",{nocap:true,note:"Hang from the bar. Keep feet on the floor or a box for assist. Chin over bar, lower with control."}),
       bw("em-plank","Plank",2,15,45,"Day B",{cap:45,note:"Seconds, not reps. Knees down if needed."}),
     ]},
   ]},
@@ -817,28 +817,17 @@ function adjustRest(d){
   startRest(next);
 }
 
-function bumpSetRep(ei, si, delta){
-  unlockAudio();
+function bumpTargetReps(ei, delta){
   const ex0 = state.exercises[ei];
   if (!ex0 || ex0.skipped) return;
-  const before = ex0.setsLog[si];
-  const starting = !before.ok && !before.miss;
   state.exercises = state.exercises.map((ex,i) => {
     if (i!==ei) return ex;
-    const target = ex.reps;
-    const max = maxRep(ex);
-    const log = ex.setsLog.map((s,j) => {
-      if (j!==si) return s;
-      const logged = s.ok || s.miss;
-      let reps = logged ? (s.reps ?? target) : target;
-      reps = Math.max(0, Math.min(max, reps + delta));
-      const ok = reps >= target;
-      return {ok, miss:!ok, reps};
-    });
-    return {...ex, skipped:false, setsLog:log};
+    const max = maxRep(ex) || 50;
+    const reps = Math.max(1, Math.min(max, (ex.reps || 1) + delta));
+    return {...ex, reps};
   });
+  state.liftProgress = captureProgress(state.exercises, state.liftProgress);
   save(); render();
-  if (starting) startRest(state.exercises[ei].rest);
 }
 function onMark(ei, si){
   unlockAudio();
@@ -933,8 +922,8 @@ function render(){
           <span class="r">${ex.bilateral?`${shown} ea`:shown}</span>
         </button>
         <div class="set-adj">
-          <button type="button" class="set-pm" data-act="set-rep" data-i="${ei}" data-s="${si}" data-d="-1" aria-label="Fewer reps">−</button>
-          <button type="button" class="set-pm" data-act="set-rep" data-i="${ei}" data-s="${si}" data-d="1" aria-label="More reps">+</button>
+          <button type="button" class="set-pm" data-act="set-rep" data-i="${ei}" data-d="-1" aria-label="Decrease target reps">−</button>
+          <button type="button" class="set-pm" data-act="set-rep" data-i="${ei}" data-d="1" aria-label="Increase target reps">+</button>
         </div>
       </div>`;
     }).join("")}</div>`;
@@ -1066,7 +1055,7 @@ function render(){
       <button class="primary" data-act="log">Log session</button>
       <button data-act="reset">${I.reset} Reset</button>
     </div>
-    <p class="foot">Tap a set to log the target, then tap again to add reps up to the cap (or soft max). Tap at max clears the set. Use − / + under a set to change that set’s reps (also logs an unlogged set). Long-press a set for a miss (below target); tap a miss to drop reps, then clear. Leave a lift blank or skip — it won’t count. All sets clean above target → next session uses that min. Exactly at target: 3 clean → +2 reps (or +2.5 kg at cap / on 5×5-style lifts; bodyweight lifts use the same kg steppers for added load). 3 short sessions → reset week (drop kg first if loaded).</p>
+    <p class="foot">Tap a set to log the target, then tap again to add reps up to the cap (or soft max). Tap at max clears the set. Use − / + under a set to adjust the target rep range (does not log or start rest). Long-press a set for a miss (below target); tap a miss to drop reps, then clear. Leave a lift blank or skip — it won’t count. All sets clean above target → next session uses that min. Exactly at target: 3 clean → +2 reps (or +2.5 kg at cap / on 5×5-style lifts; bodyweight lifts use the same kg steppers for added load). 3 short sessions → reset week (drop kg first if loaded).</p>
     ${settings}
   `;
 }
@@ -1116,7 +1105,7 @@ document.getElementById("app").addEventListener("click", (e) => {
   }
   else if (act==="set-rep") {
     e.stopPropagation();
-    bumpSetRep(+btn.dataset.i, +btn.dataset.s, +btn.dataset.d);
+    bumpTargetReps(+btn.dataset.i, +btn.dataset.d);
   }
   else if (act==="weight") bumpWeight(+btn.dataset.i, +btn.dataset.d);
   else if (act==="level") bumpLevel(+btn.dataset.i, +btn.dataset.d);
