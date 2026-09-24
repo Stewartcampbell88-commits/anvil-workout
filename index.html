@@ -59,10 +59,8 @@
     .set.miss .set-hit { background:var(--miss); color:var(--bg); }
     .set-tools { display:flex; gap:0.25rem; }
     .set-tool { flex:1; min-height:2rem; border-radius:0.5rem; font-size:0.7rem; font-weight:700; background:var(--border); display:flex; align-items:center; justify-content:center; padding:0 0.15rem; touch-action:manipulation; }
-    .set-fail { font-size:0.65rem; letter-spacing:0.02em; }
     .sets.tight .set-hit { min-height:2.75rem; font-size:1.05rem; border-radius:0.625rem; }
     .sets.tight .set-tool { min-height:1.75rem; font-size:0.65rem; border-radius:0.4rem; }
-    .sets.tight .set-fail { font-size:0.55rem; }
     .skip { min-height:2.75rem; padding:0 0.375rem; font-size:0.75rem; font-weight:500; letter-spacing:0.04em; color:var(--muted); opacity:0.7; }
     .skip.on { color:var(--primary); opacity:1; }
     .split { display:flex; gap:0.5rem; margin-top:0.75rem; }
@@ -118,7 +116,38 @@
 const STORAGE = "anvil_app_v3";
 const SET_OPTS = [1,2,3,4,5];
 const REP_OPTS = [5,6,8,10,12,15,20,30,40];
+const WAVE_REPS = [6, 8, 10, 12];
 const PUSH_LEVELS = ["Kitchen bench","Kitchen table","Workout bench","Knees","Toes"];
+
+function isPlankSeconds(ex){
+  return ex.id === "em-plank" || /seconds/i.test(ex.note||"");
+}
+function isWaveProgram(programId, ex){
+  const pid = programId || (typeof state !== "undefined" && state?.programId);
+  return pid === "ember" || pid === "anvil" || String(ex?.id||"").startsWith("em-");
+}
+function snapWaveRep(reps){
+  const n = Number(reps);
+  if (!Number.isFinite(n)) return WAVE_REPS[0];
+  if (WAVE_REPS.includes(n)) return n;
+  const up = WAVE_REPS.find(w => w >= n);
+  return up != null ? up : WAVE_REPS[WAVE_REPS.length - 1];
+}
+function nextWaveStep(reps, weight){
+  const idx = WAVE_REPS.indexOf(reps);
+  if (idx >= 0 && idx < WAVE_REPS.length - 1) {
+    const r = WAVE_REPS[idx + 1];
+    return {reps:r, weight, note:`wave → 3×${r}`};
+  }
+  if (idx === WAVE_REPS.length - 1 || reps >= WAVE_REPS[WAVE_REPS.length - 1]) {
+    const w = +(weight + 2.5).toFixed(1);
+    return {reps:6, weight:w, note:`wave → 3×6 +2.5kg → ${w}kg`};
+  }
+  const next = WAVE_REPS.find(w => w > reps);
+  if (next != null) return {reps:next, weight, note:`wave snap → 3×${next}`};
+  const w = +(weight + 2.5).toFixed(1);
+  return {reps:6, weight:w, note:`wave → 3×6 +2.5kg → ${w}kg`};
+}
 
 function bb(id,name,sets,reps,rest,block,extra={}) {
   return {id,name,sets,reps,rest,weight: extra.weight ?? 20, block, ...extra};
@@ -128,7 +157,7 @@ function bw(id,name,sets,reps,rest,block,extra={}) {
 }
 
 const PROGRAMS = [
-  {id:"anvil", name:"ANVIL", blurb:"2× week whole-body. A/B split. Bench not push-ups. Heaves on B.", days:[
+  {id:"anvil", name:"ANVIL", blurb:"2× week A/B. Wave 6→8→10→12 then +2.5kg. Heaves on B.", days:[
     {label:"A", exercises:[
       bb("squat","Barbell squat",3,8,120,"Day A"),
       bb("bench","Barbell bench",3,8,120,"Day A"),
@@ -154,7 +183,7 @@ const PROGRAMS = [
     bb("tp-press","Shoulder press",3,10,60,"Mon / Wed / Fri · 3 × 10",{weight:0,cap:16,note:"Press overhead, don’t shrug. Lower to ear height with control."}),
     bw("tp-situp","Sit-ups",3,10,60,"Mon / Wed / Fri · 3 × 10",{nocap:true,note:"Feet planted. Curl up, don’t yank neck. Lower under control."}),
   ]}]},
-  {id:"ember", name:"EMBER", blurb:"Beginner 3× week. Wave: 3×6 ×3 clean → 3×8 ×3 clean → 3×6 +2.5kg.", days:[
+  {id:"ember", name:"EMBER", blurb:"Beginner 3× week. Wave: 3×6 → 3×8 → 3×10 → 3×12 (×3 clean each), then 3×6 +2.5kg.", days:[
     {label:"A", exercises:[
       bb("em-squat","Squats",3,6,75,"Day A",{weight:0,cap:12,note:"Sit to a chair if needed. Hold a plate when ready."}),
       bb("em-bench","Barbell bench",3,6,90,"Day A",{weight:20,cap:10,note:"Empty bar first if needed. Feet planted, lower to chest, press up."}),
@@ -254,11 +283,18 @@ function captureProgress(exs, prev={}){
   for (const ex of exs) next[ex.id] = {reps:ex.reps, weight:ex.weight, streak:ex.streak, failStreak:ex.failStreak, levelIndex:ex.levelIndex};
   return next;
 }
-function applyProgress(exs, progress){
+function applyProgress(exs, progress, programId){
+  const pid = programId || (typeof state !== "undefined" && state?.programId);
+  const waveProg = pid === "ember" || pid === "anvil";
   return exs.map(ex => {
     const p = progress[ex.id];
-    if (!p) return ex;
-    return {...ex, reps:p.reps, weight:p.weight, streak:p.streak, failStreak:p.failStreak, levelIndex:p.levelIndex ?? ex.levelIndex};
+    let next = p
+      ? {...ex, reps:p.reps, weight:p.weight, streak:p.streak, failStreak:p.failStreak, levelIndex:p.levelIndex ?? ex.levelIndex}
+      : ex;
+    if ((waveProg || String(next.id||"").startsWith("em-")) && !isPlankSeconds(next) && next.reps != null && !WAVE_REPS.includes(next.reps)) {
+      next = {...next, reps: snapWaveRep(next.reps)};
+    }
+    return next;
   });
 }
 function hydrate(raw){
@@ -528,12 +564,23 @@ function load(){
     if (!raw) return;
     const program = getProgram(raw.programId || "anvil");
     const dayIndex = Math.min(Math.max(0, raw.dayIndex||0), program.days.length-1);
-    const liftProgress = raw.liftProgress || {};
+    let liftProgress = raw.liftProgress || {};
+    // Snap odd ANVIL/EMBER targets (e.g. stuck 7 → 8) in saved progress
+    if (program.id === "anvil" || program.id === "ember") {
+      const snapped = {};
+      for (const [id, p] of Object.entries(liftProgress)) {
+        if (!p || typeof p !== "object") { snapped[id] = p; continue; }
+        const plank = id === "em-plank";
+        const reps = (!plank && p.reps != null && !WAVE_REPS.includes(p.reps)) ? snapWaveRep(p.reps) : p.reps;
+        snapped[id] = reps === p.reps ? p : {...p, reps};
+      }
+      liftProgress = snapped;
+    }
     state = {
       programId: program.id,
       dayIndex,
       liftProgress,
-      exercises: applyProgress(hydrate(raw.exercises) || seedProgram(program.id, dayIndex), liftProgress),
+      exercises: applyProgress(hydrate(raw.exercises) || seedProgram(program.id, dayIndex), liftProgress, program.id),
       history: raw.history || [],
       soundVolume: clampVolume(raw.soundVolume ?? 0.7),
       cuePack: normalizeCuePack(raw.cuePack),
@@ -633,19 +680,6 @@ function markSet(ei, si){
   });
   save(); render();
 }
-function markSetMiss(ei, si){
-  state.exercises = state.exercises.map((ex,i) => {
-    if (i!==ei) return ex;
-    const log = ex.setsLog.map((s,j) => {
-      if (j!==si) return s;
-      if (s.miss) return {ok:false, miss:false};
-      const reps = s.reps != null ? s.reps : Math.max(0, ex.reps - 1);
-      return {ok:false, miss:true, reps};
-    });
-    return {...ex, skipped:false, setsLog:log};
-  });
-  save(); render();
-}
 function bumpWeight(ei, d){
   state.exercises = state.exercises.map((ex,i) => i===ei ? {...ex, weight: Math.max(0, +(ex.weight+d).toFixed(1))} : ex);
   state.liftProgress = captureProgress(state.exercises, state.liftProgress);
@@ -672,7 +706,7 @@ function setProgram(id, dayIndex=0){
   const program = getProgram(id);
   const day = Math.min(Math.max(0, dayIndex), program.days.length-1);
   const progress = captureProgress(state.exercises, state.liftProgress);
-  state = {...state, programId: program.id, dayIndex: day, liftProgress: progress, exercises: applyProgress(seedProgram(program.id, day), progress)};
+  state = {...state, programId: program.id, dayIndex: day, liftProgress: progress, exercises: applyProgress(seedProgram(program.id, day), progress, program.id)};
   save(); render();
 }
 function setDay(dayIndex){
@@ -681,7 +715,7 @@ function setDay(dayIndex){
   const progress = captureProgress(state.exercises, state.liftProgress);
   state.dayIndex = day;
   state.liftProgress = progress;
-  state.exercises = applyProgress(seedProgram(state.programId, day), progress);
+  state.exercises = applyProgress(seedProgram(state.programId, day), progress, state.programId);
   save(); render();
 }
 function addExercise(def){
@@ -733,14 +767,12 @@ function logSession(){
       } else notes.push(`${ex.name}: no-rep ${failStreak}/3 — stay at ${reps}`);
       return {...ex, streak:0, failStreak, reps, weight, setsLog: blankSets(ex.sets)};
     }
-    const isEmber = state.programId === "ember" || String(ex.id||"").startsWith("em-");
-    if (isEmber) {
-      // Ember double-progression wave only (no carry-forward / generic +2)
+    if (isWaveProgram(state.programId, ex)) {
+      // Ember / Anvil shared ladder: 6 → 8 → 10 → 12, then 6 +2.5kg
       let streak = (ex.streak||0) + 1;
       let {reps, weight} = ex;
       if (streak >= 3) {
-        const isPlank = ex.id === "em-plank" || /seconds/i.test(ex.note||"");
-        if (isPlank) {
+        if (isPlankSeconds(ex)) {
           if (reps < 30) {
             reps = 30; streak = 0;
             notes.push(`${ex.name}: wave → 3×30s`);
@@ -748,14 +780,10 @@ function logSession(){
             reps = 20; streak = 0;
             notes.push(`${ex.name}: wave → 3×20s (no kg)`);
           }
-        } else if (reps <= 6) {
-          reps = 8; streak = 0;
-          notes.push(`${ex.name}: wave → 3×8`);
         } else {
-          reps = 6;
-          weight = +(weight+2.5).toFixed(1);
-          streak = 0;
-          notes.push(`${ex.name}: wave → 3×6 +2.5kg → ${weight}kg`);
+          const step = nextWaveStep(reps, weight);
+          reps = step.reps; weight = step.weight; streak = 0;
+          notes.push(`${ex.name}: ${step.note}`);
         }
       } else notes.push(`${ex.name}: clean streak ${streak}/3 at 3×${reps}`);
       return {...ex, streak, failStreak:0, reps, weight, setsLog: blankSets(ex.sets)};
@@ -830,15 +858,15 @@ function bumpSetReps(ei, si, delta){
   if (!ex0 || ex0.skipped) return;
   state.exercises = state.exercises.map((ex,i) => {
     if (i!==ei) return ex;
+    const target = ex.reps;
     const max = maxRep(ex) || 50;
     const log = ex.setsLog.map((s,j) => {
       if (j!==si) return s;
-      const cur = s.reps ?? ex.reps;
+      const cur = s.reps ?? target;
       const next = Math.max(0, Math.min(max, cur + delta));
-      let ok = !!s.ok, miss = !!s.miss;
-      if (ok && next < ex.reps) { ok = false; miss = true; }
-      else if (miss && next >= ex.reps) { ok = true; miss = false; }
-      return {...s, ok, miss, reps: next};
+      if (next < target) return {ok:false, miss:true, reps:next};
+      if (s.ok) return {ok:true, miss:false, reps:next};
+      return {ok:false, miss:false, reps:next};
     });
     return {...ex, setsLog:log};
   });
@@ -849,13 +877,6 @@ function onMark(ei, si){
   const before = state.exercises[ei].setsLog[si];
   const starting = !before.ok && !before.miss;
   markSet(ei, si);
-  if (starting) startRest(state.exercises[ei].rest);
-}
-function onMarkMiss(ei, si){
-  unlockAudio();
-  const before = state.exercises[ei].setsLog[si];
-  const starting = !before.ok && !before.miss;
-  markSetMiss(ei, si);
   if (starting) startRest(state.exercises[ei].rest);
 }
 function onLog(){
@@ -937,7 +958,6 @@ function render(){
         </button>
         <div class="set-tools">
           <button type="button" class="set-tool" data-act="set-rep" data-i="${ei}" data-s="${si}" data-d="-1" aria-label="Fewer reps">−</button>
-          <button type="button" class="set-tool set-fail" data-act="set-fail" data-i="${ei}" data-s="${si}">fail</button>
           <button type="button" class="set-tool" data-act="set-rep" data-i="${ei}" data-s="${si}" data-d="1" aria-label="More reps">+</button>
         </div>
       </div>`;
@@ -1070,7 +1090,7 @@ function render(){
       <button class="primary" data-act="log">Log session</button>
       <button data-act="reset">${I.reset} Reset</button>
     </div>
-    <p class="foot">Tap the big number to complete that set (tap again clears). − / + under a set change that set’s reps. Fail marks a miss — then dial the reps to what you did. Leave a lift blank or skip — it won’t count. All sets clean above target → next session uses that min. Exactly at target: 3 clean → +2 reps (or +2.5 kg at cap / on 5×5-style lifts; bodyweight lifts use the same kg steppers for added load). 3 short sessions → reset week (drop kg first if loaded).</p>
+    <p class="foot">Tap the big number to complete that set (tap again clears). − / + dial that set’s reps — going below the target marks it failed (red). Leave a lift blank or skip — it won’t count. Ember / Anvil: 3 clean at a rung climbs 6→8→10→12, then 3×6 +2.5kg (plank waves 20→30→20s, no kg). Other programs: 3 clean → +2 reps (or +2.5 kg at cap). 3 short sessions → reset week (drop kg first if loaded).</p>
     ${settings}
   `;
 }
@@ -1090,10 +1110,6 @@ document.getElementById("app").addEventListener("click", (e) => {
   const act = btn.dataset.act;
   if (act==="set") {
     onMark(+btn.dataset.i, +btn.dataset.s);
-  }
-  else if (act==="set-fail") {
-    e.stopPropagation();
-    onMarkMiss(+btn.dataset.i, +btn.dataset.s);
   }
   else if (act==="set-rep") {
     e.stopPropagation();
