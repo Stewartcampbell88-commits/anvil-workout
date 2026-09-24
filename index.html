@@ -52,17 +52,16 @@
     .cue { height:1.5rem; font-size:1.125rem; font-weight:700; letter-spacing:0.04em; margin:0; }
     .sets { display:flex; gap:0.5rem; margin-top:0.75rem; }
     .sets.tight { gap:0.25rem; }
-    .set { flex:1; min-height:4rem; border-radius:0.75rem; background:var(--border); display:flex; flex-direction:column; align-items:stretch; justify-content:stretch; padding:0; overflow:hidden; touch-action:manipulation; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+    .set { flex:1; min-height:4rem; border-radius:0.75rem; background:var(--border); display:flex; flex-direction:column; align-items:center; justify-content:center; padding:0.375rem 0.125rem; touch-action:manipulation; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
     .set.ok { background:var(--done); color:var(--bg); }
     .set.miss { background:var(--miss); color:var(--bg); }
-    .set-main { flex:1; width:100%; min-height:0; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:0.375rem 0.125rem 0.125rem; background:transparent; touch-action:manipulation; }
     .set .n { font-weight:700; font-size:0.875rem; }
     .set .r { font-weight:600; font-variant-numeric:tabular-nums; color:var(--muted); font-size:0.75rem; }
     .set.ok .r, .set.miss .r { font-size:1.125rem; line-height:1; color:inherit; }
-    .set-adj { display:flex; gap:0.125rem; padding:0 0.125rem 0.125rem; flex-shrink:0; }
-    .set-pm { flex:1; min-height:1.75rem; height:1.75rem; border-radius:0.375rem; font-size:0.875rem; font-weight:700; line-height:1; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.08); color:var(--fg); }
-    .set.ok .set-pm, .set.miss .set-pm { background:rgba(0,0,0,0.28); color:inherit; }
-    .sets.tight .set-pm { min-height:1.75rem; font-size:0.8125rem; }
+    .reps-wrap { display:flex; flex-direction:column; align-items:center; gap:0.25rem; margin-left:0.25rem; }
+    .reps-box { min-width:3.5rem; min-height:2.75rem; border-radius:0.75rem; background:var(--border); display:flex; align-items:center; justify-content:center; font-size:1.125rem; font-weight:600; font-variant-numeric:tabular-nums; padding:0 0.5rem; }
+    .reps-adj { display:flex; gap:0.25rem; }
+    .set-pm { min-width:2rem; min-height:1.75rem; height:1.75rem; padding:0 0.5rem; border-radius:0.375rem; font-size:0.875rem; font-weight:700; line-height:1; display:flex; align-items:center; justify-content:center; background:var(--border); color:var(--fg); }
     .skip { min-height:2.75rem; padding:0 0.375rem; font-size:0.75rem; font-weight:500; letter-spacing:0.04em; color:var(--muted); opacity:0.7; }
     .skip.on { color:var(--primary); opacity:1; }
     .split { display:flex; gap:0.5rem; margin-top:0.75rem; }
@@ -624,18 +623,11 @@ function markSet(ei, si){
   state.exercises = state.exercises.map((ex,i) => {
     if (i!==ei) return ex;
     const target = ex.reps;
-    const max = maxRep(ex);
     const log = ex.setsLog.map((s,j) => {
       if (j!==si) return s;
       const logged = s.ok || s.miss;
       if (!logged) return {ok:true, miss:false, reps:target};
-      const current = s.reps ?? target;
-      if (s.miss) {
-        if (current <= 1) return {ok:false, miss:false};
-        return {ok:false, miss:true, reps:current - 1};
-      }
-      // ok path: bump reps up to max, then clear
-      if (current < max) return {ok:true, miss:false, reps:current + 1};
+      // already ok or miss → clear (never bump reps / never edit range)
       return {ok:false, miss:false};
     });
     return {...ex, skipped:false, setsLog:log};
@@ -905,27 +897,29 @@ function render(){
            <span class="kg">${ex.weight}</span>
            <button class="icon-btn" data-act="weight" data-i="${ei}" data-d="2.5" aria-label="Increase weight">${I.plus}</button>
            <span class="muted" style="font-size:.875rem">kg</span>`;
+    const repsLabel = ex.bilateral ? `${ex.reps} ea` : String(ex.reps);
+    const repsCtrl = ex.skipped ? "" : `<div class="reps-wrap">
+           <div class="reps-box" aria-label="Target reps">${repsLabel}</div>
+           <div class="reps-adj">
+             <button type="button" class="set-pm" data-act="set-rep" data-i="${ei}" data-d="-1" aria-label="Decrease target reps">−</button>
+             <button type="button" class="set-pm" data-act="set-rep" data-i="${ei}" data-d="1" aria-label="Increase target reps">+</button>
+           </div>
+         </div>`;
     const load = ex.levels?.length
       ? `<button class="icon-btn" data-act="level" data-i="${ei}" data-d="-1" aria-label="Easier height">${I.minus}</button>
          <span class="level">${esc(level)}</span>
          <button class="icon-btn" data-act="level" data-i="${ei}" data-d="1" aria-label="Harder height">${I.plus}</button>
          <span style="flex-basis:100%;height:0" aria-hidden="true"></span>
-         ${weightCtrl}`
-      : weightCtrl;
+         ${weightCtrl}${repsCtrl}`
+      : `${weightCtrl}${repsCtrl}`;
     const sets = ex.skipped ? "" : `<div class="sets${tight?" tight":""}">${ex.setsLog.map((log,si) => {
       const logged = log.ok || log.miss;
       const shown = logged ? (log.reps ?? ex.reps) : ex.reps;
       const cls = log.ok ? "ok" : log.miss ? "miss" : "";
-      return `<div class="set ${cls}">
-        <button type="button" class="set-main" data-act="set" data-i="${ei}" data-s="${si}">
-          <span class="n">${tight?`S${si+1}`:`Set ${si+1}`}</span>
-          <span class="r">${ex.bilateral?`${shown} ea`:shown}</span>
-        </button>
-        <div class="set-adj">
-          <button type="button" class="set-pm" data-act="set-rep" data-i="${ei}" data-d="-1" aria-label="Decrease target reps">−</button>
-          <button type="button" class="set-pm" data-act="set-rep" data-i="${ei}" data-d="1" aria-label="Increase target reps">+</button>
-        </div>
-      </div>`;
+      return `<button type="button" class="set ${cls}" data-act="set" data-i="${ei}" data-s="${si}">
+        <span class="n">${tight?`S${si+1}`:`Set ${si+1}`}</span>
+        <span class="r">${ex.bilateral?`${shown} ea`:shown}</span>
+      </button>`;
     }).join("")}</div>`;
     return `${showTag?`<p class="block">${esc(ex.block)}</p>`:""}
       <article class="card${isActive?" active":""}${ex.skipped?" skipped":""}" id="ex-${esc(ex.id)}">
@@ -1055,7 +1049,7 @@ function render(){
       <button class="primary" data-act="log">Log session</button>
       <button data-act="reset">${I.reset} Reset</button>
     </div>
-    <p class="foot">Tap a set to log the target, then tap again to add reps up to the cap (or soft max). Tap at max clears the set. Use − / + under a set to adjust the target rep range (does not log or start rest). Long-press a set for a miss (below target); tap a miss to drop reps, then clear. Leave a lift blank or skip — it won’t count. All sets clean above target → next session uses that min. Exactly at target: 3 clean → +2 reps (or +2.5 kg at cap / on 5×5-style lifts; bodyweight lifts use the same kg steppers for added load). 3 short sessions → reset week (drop kg first if loaded).</p>
+    <p class="foot">− / + under the reps box change the target range. Tap a set to log that target (tap again clears). Long-press a set for a miss. Leave a lift blank or skip — it won’t count. All sets clean above target → next session uses that min. Exactly at target: 3 clean → +2 reps (or +2.5 kg at cap / on 5×5-style lifts; bodyweight lifts use the same kg steppers for added load). 3 short sessions → reset week (drop kg first if loaded).</p>
     ${settings}
   `;
 }

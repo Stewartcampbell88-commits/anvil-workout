@@ -7,7 +7,7 @@ ANVIL is a lightweight home-gym workout tracker packaged as a Progressive Web Ap
 | File | Role |
 |------|------|
 | `index.html` | Full app UI + logic (programs, session tracking, history) |
-| `sw.js` | Offline service worker (`anvil-v16` cache) |
+| `sw.js` | Offline service worker (`anvil-v17` cache) |
 | `manifest.json` | PWA install metadata |
 | Icons / favicon | App icons for install and home screen |
 | `sounds/*.mp3` | Rest-timer tones packs use Web Audio; voice packs use real en-AU clips (William) |
@@ -52,7 +52,7 @@ To keep existing workouts when shipping a new build:
 
 Uninstalling removes the app’s WebView storage and deletes all local data. Prefer Export → update → Import if you must wipe the install.
 
-When you change shell assets (HTML/CSS/JS), bump the service worker `CACHE` name (currently `anvil-v16`) so installed clients fetch the new files.
+When you change shell assets (HTML/CSS/JS), bump the service worker `CACHE` name (currently `anvil-v17`) so installed clients fetch the new files.
 
 ## Running locally
 
