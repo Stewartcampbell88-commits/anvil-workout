@@ -91,6 +91,11 @@
     .vol-row input[type=range] { flex:1; min-width:0; height:2rem; accent-color:var(--primary); }
     .vol-lab { min-width:3rem; text-align:right; font-weight:700; font-variant-numeric:tabular-nums; font-size:0.875rem; }
     .cue-list { display:grid; gap:0.5rem; margin-top:0.5rem; }
+    .settings-sheet { position:fixed; inset:0; z-index:30; background:var(--bg); display:flex; flex-direction:column; padding:max(0.75rem, env(safe-area-inset-top)) 1rem max(1.5rem, env(safe-area-inset-bottom)); }
+    .settings-sheet-inner { max-width:28rem; margin:0 auto; width:100%; flex:1; min-height:0; display:flex; flex-direction:column; }
+    .settings-head { position:sticky; top:0; z-index:1; display:flex; align-items:center; justify-content:space-between; gap:0.75rem; background:var(--bg); padding:0.25rem 0 0.75rem; border-bottom:1px solid var(--border); flex-shrink:0; }
+    .settings-head h2 { margin:0; font-size:1.25rem; letter-spacing:0.04em; }
+    .settings-body { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:0.75rem 0 1rem; }
   </style>
 </head>
 <body>
@@ -289,6 +294,8 @@ const I = {
   phone: `<svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>`,
   reset: `<svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>`,
   sound: `<svg viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a9 9 0 0 1 0 14"/></svg>`,
+  settings: `<svg viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>`,
+  x: `<svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`,
 };
 
 let ctx = null;
@@ -826,7 +833,7 @@ function onLog(){
   if (!anyWork) { toast("Tick a set first — blank lifts are skipped"); return; }
   const notes = logSession();
   toast("Session logged", notes.slice(0,3).join(" · "));
-  ui.panel = "history";
+  ui.panel = "settings";
   stopRest();
   render();
 }
@@ -916,15 +923,6 @@ function render(){
     ? `<div class="days">${program.days.map((d,i)=>`<button class="${i===state.dayIndex?"on":""}" data-act="day" data-d="${i}">${esc(d.label)}</button>`).join("")}</div>`
     : "";
 
-  const history = ui.panel==="history" ? `<section class="panel"><p class="tiny">Session log</p>${
-    state.history.length===0 ? `<p class="note">No sessions yet. Tick every set, then log.</p>`
-    : `<ol style="margin:.5rem 0 0;padding:0;list-style:none">${state.history.slice(0,8).map(h=>`<li style="margin-top:.75rem"><p style="margin:0;font-size:.875rem;font-weight:600">${esc(fmtWhen(h.date))}</p><p class="note">${esc(h.notes.join(" · "))}</p></li>`).join("")}</ol>`
-  }</section>` : "";
-
-  const programs = ui.panel==="programs" ? `<section class="panel"><p class="tiny">Swap program</p><ul style="margin:.75rem 0 0;padding:0;list-style:none;display:grid;gap:.5rem">${
-    PROGRAMS.map(p=>`<li><button class="prog${p.id===state.programId?" on":""}" data-act="program" data-id="${p.id}"><span style="font-size:1rem;font-weight:700">${esc(p.name)}</span><span class="note" style="${p.id===state.programId?"opacity:.8;color:inherit":""}">${esc(p.blurb)}</span></button></li>`).join("")
-  }</ul></section>` : "";
-
   const remove = ui.panel==="remove" ? `<section class="panel"><p class="tiny">This session</p>${
     state.exercises.map(ex=>`<div class="rm"><span style="font-size:.875rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(ex.name)}</span><button data-act="remove" data-id="${esc(ex.id)}" data-name="${esc(ex.name)}">Remove</button></div>`).join("")
   }</section>` : "";
@@ -947,14 +945,33 @@ function render(){
   }</section>` : "";
 
   const volPct = Math.round(clampVolume(state.soundVolume) * 100);
-  const sound = ui.panel==="sound" ? `<section class="panel"><p class="tiny">Sound</p>
-    <p class="tiny" style="margin-top:.75rem;letter-spacing:.08em">Volume</p>
-    <div class="vol-row"><input type="range" min="0" max="100" step="1" value="${volPct}" data-act="vol" aria-label="Sound volume" /><span class="vol-lab" data-vol-label>${volPct}%</span></div>
-    <p class="tiny" style="margin-top:.875rem;letter-spacing:.08em">Rest cues</p>
-    <div class="cue-list">${Object.values(CUE_PACKS).map(p=>`<button class="prog${p.id===state.cuePack?" on":""}" data-act="cue-pack" data-id="${p.id}"><span style="font-size:1rem;font-weight:700">${esc(p.name)}</span><span class="note" style="${p.id===state.cuePack?"opacity:.8;color:inherit":""}">${esc(p.blurb)}</span></button>`).join("")}</div>
-    <button class="split" style="width:100%;margin-top:.75rem"><span class="primary" style="display:flex;width:100%;min-height:2.75rem;border-radius:.75rem;align-items:center;justify-content:center;font-weight:700;gap:.5rem" data-act="preview-sound">${I.sound} Preview</span></button>
-    <p class="note" style="margin-top:.75rem">Cues fire on the last 3 seconds of rest. Tone packs use soft app-style chimes; voice packs use real Aussie audio (not browser TTS). Volume 0 mutes everything.</p>
-  </section>` : "";
+  const settings = ui.panel==="settings" ? `<div class="settings-sheet" role="dialog" aria-modal="true" aria-label="Settings"><div class="settings-sheet-inner">
+    <div class="settings-head"><h2>Settings</h2><button class="icon-btn" data-act="panel" data-p="settings" aria-label="Close">${I.x}</button></div>
+    <div class="settings-body">
+      <section class="panel"><p class="tiny">Program</p><ul style="margin:.75rem 0 0;padding:0;list-style:none;display:grid;gap:.5rem">${
+        PROGRAMS.map(p=>`<li><button class="prog${p.id===state.programId?" on":""}" data-act="program" data-id="${p.id}"><span style="font-size:1rem;font-weight:700">${esc(p.name)}</span><span class="note" style="${p.id===state.programId?"opacity:.8;color:inherit":""}">${esc(p.blurb)}</span></button></li>`).join("")
+      }</ul></section>
+      <section class="panel"><p class="tiny">Sound</p>
+        <p class="tiny" style="margin-top:.75rem;letter-spacing:.08em">Volume</p>
+        <div class="vol-row"><input type="range" min="0" max="100" step="1" value="${volPct}" data-act="vol" aria-label="Sound volume" /><span class="vol-lab" data-vol-label>${volPct}%</span></div>
+        <p class="tiny" style="margin-top:.875rem;letter-spacing:.08em">Rest cues</p>
+        <div class="cue-list">${Object.values(CUE_PACKS).map(p=>`<button class="prog${p.id===state.cuePack?" on":""}" data-act="cue-pack" data-id="${p.id}"><span style="font-size:1rem;font-weight:700">${esc(p.name)}</span><span class="note" style="${p.id===state.cuePack?"opacity:.8;color:inherit":""}">${esc(p.blurb)}</span></button>`).join("")}</div>
+        <button class="split" style="width:100%;margin-top:.75rem"><span class="primary" style="display:flex;width:100%;min-height:2.75rem;border-radius:.75rem;align-items:center;justify-content:center;font-weight:700;gap:.5rem" data-act="preview-sound">${I.sound} Preview</span></button>
+        <p class="note" style="margin-top:.75rem">Cues fire on the last 3 seconds of rest. Tone packs use soft app-style chimes; voice packs use real Aussie audio (not browser TTS). Volume 0 mutes everything.</p>
+      </section>
+      <section class="panel"><p class="tiny">Session log</p>${
+        state.history.length===0 ? `<p class="note">No sessions yet. Tick every set, then log.</p>`
+        : `<ol style="margin:.5rem 0 0;padding:0;list-style:none">${state.history.slice(0,8).map(h=>`<li style="margin-top:.75rem"><p style="margin:0;font-size:.875rem;font-weight:600">${esc(fmtWhen(h.date))}</p><p class="note">${esc(h.notes.join(" · "))}</p></li>`).join("")}</ol>`
+      }</section>
+      <section class="panel"><p class="tiny">Backup</p>
+        <div class="split" style="margin-top:.75rem">
+          <button data-act="export">Export</button>
+          <button data-act="import">Import</button>
+        </div>
+        <p class="note" style="margin-top:.75rem">Export downloads a JSON backup. Import overwrites local data from a previous file.</p>
+      </section>
+    </div>
+  </div></div>` : "";
 
   const isFile = location.protocol === "file:";
   const hint = isFile
@@ -970,9 +987,7 @@ function render(){
         </div>
         <div class="head-actions">
           ${ui.installed ? "" : `<button class="install primary" data-act="install">${I.phone} Install</button>`}
-          <button class="icon-btn" data-act="panel" data-p="sound" aria-label="Sound">${I.sound}</button>
-          <button class="icon-btn" data-act="panel" data-p="programs" aria-label="Programs">${I.layers}</button>
-          <button class="icon-btn" data-act="panel" data-p="history" aria-label="History">${I.clock}</button>
+          <button class="icon-btn" data-act="panel" data-p="settings" aria-label="Settings">${I.settings}</button>
         </div>
       </div>
       ${days}
@@ -982,26 +997,19 @@ function render(){
         <button class="icon-btn" data-act="rest" data-d="15">+</button></div></div>`:""}
     </header>
     ${hint}
-    ${history}
-    ${programs}
     <div class="space">${cards}</div>
     <div class="split">
       <button class="${ui.panel==="add"?"on":""}" data-act="panel" data-p="add">${I.plus} Add</button>
       <button class="${ui.panel==="remove"?"on":""}" data-act="panel" data-p="remove">${I.minus} Remove</button>
-      <button class="${ui.panel==="sound"?"on":""}" data-act="panel" data-p="sound">${I.sound} Sound</button>
     </div>
     ${remove}
     ${add}
-    ${sound}
     <div class="split">
       <button class="primary" data-act="log">Log session</button>
       <button data-act="reset">${I.reset} Reset</button>
     </div>
-    <div class="split">
-      <button data-act="export">Export</button>
-      <button data-act="import">Import</button>
-    </div>
     <p class="foot">Tap a set to log the target, then tap again to add reps up to the cap (or soft max). Tap at max clears the set. Long-press a set for a miss (below target); tap a miss to drop reps, then clear. Leave a lift blank or skip — it won’t count. All sets clean above target → next session uses that min. Exactly at target: 3 clean → +2 reps (or +2.5 kg at cap / on 5×5-style lifts; bodyweight lifts use the same kg steppers for added load). 3 short sessions → reset week (drop kg first if loaded).</p>
+    ${settings}
   `;
 }
 
