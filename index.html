@@ -114,6 +114,7 @@
 <input type="file" id="import-file" accept="application/json,.json" class="hide" />
 <script>
 const STORAGE = "anvil_app_v3";
+const APP_VERSION = "anvil-v23";
 const SET_OPTS = [1,2,3,4,5];
 const REP_OPTS = [5,6,8,10,12,15,20,30,40];
 const WAVE_REPS = [6, 8, 10, 12];
@@ -602,7 +603,7 @@ let state = {
   soundVolume: 0.7,
   cuePack: "chime",
 };
-let ui = { remain:0, running:false, isGo:false, panel:"none", settingsTab:"program", pending:null, pickSets:3, pickReps:8, installHint:false, installed:false, toastTimer:null };
+let ui = { remain:0, running:false, isGo:false, panel:"none", settingsTab:"program", pending:null, pickSets:3, pickReps:8, installHint:false, installed:false, toastTimer:null, swReg:null, updateReady:false, updateChecking:false, refreshing:false, appVersion: APP_VERSION };
 let remainVal = 0, lastCue = -1, tick = null, deferredInstall = null;
 try {
   ui.installed = window.matchMedia("(display-mode: standalone)").matches || Boolean(navigator.standalone) || /ANVIL-APP/.test(navigator.userAgent) || location.hostname === "appassets.androidplatform.net";
@@ -935,6 +936,52 @@ function logSession(){
   return notes;
 }
 
+
+async function applyUpdate(){
+  const reg = ui.swReg || (await navigator.serviceWorker.getRegistration());
+  const waiting = reg && reg.waiting;
+  if (waiting) {
+    ui.refreshing = true;
+    waiting.postMessage({ type: "SKIP_WAITING" });
+    setTimeout(() => location.reload(), 1500);
+    return;
+  }
+  try { await reg?.update(); } catch {}
+  location.reload();
+}
+
+async function checkForUpdate(){
+  if (!("serviceWorker" in navigator) || !location.protocol.startsWith("http")) {
+    toast("Updates need the web app", "Open the GitHub Pages link, not a downloaded file.");
+    return;
+  }
+  ui.updateChecking = true;
+  toast("Checking…");
+  render();
+  try {
+    const reg = ui.swReg || (await navigator.serviceWorker.getRegistration());
+    if (!reg) {
+      toast("No service worker yet");
+      ui.updateChecking = false;
+      render();
+      return;
+    }
+    await reg.update();
+    await new Promise((r) => setTimeout(r, 600));
+    const pending = Boolean(reg.waiting || (reg.installing && navigator.serviceWorker.controller));
+    if (pending || ui.updateReady) {
+      ui.updateReady = true;
+      toast("Update available");
+    } else {
+      toast("You're on the latest");
+    }
+  } catch {
+    toast("Check failed");
+  }
+  ui.updateChecking = false;
+  render();
+}
+
 function toast(msg, desc){
   const el = document.getElementById("toast");
   el.textContent = desc ? `${msg} — ${desc}` : msg;
@@ -1124,7 +1171,7 @@ function render(){
   }</section>` : "";
 
   const volPct = Math.round(clampVolume(state.soundVolume) * 100);
-  const settingsTab = ["program","sound","history","backup"].includes(ui.settingsTab) ? ui.settingsTab : "program";
+  const settingsTab = ["program","sound","history","backup","about"].includes(ui.settingsTab) ? ui.settingsTab : "program";
   ui.settingsTab = settingsTab;
   let settingsDetail = "";
   if (settingsTab === "program") {
@@ -1145,7 +1192,7 @@ function render(){
       state.history.length===0 ? `<p class="note">No sessions yet. Tick every set, then log.</p>`
       : `<ol style="margin:.5rem 0 0;padding:0;list-style:none">${state.history.slice(0,8).map(h=>`<li style="margin-top:.75rem"><p style="margin:0;font-size:.875rem;font-weight:600">${esc(fmtWhen(h.date))}</p><p class="note">${esc(h.notes.join(" · "))}</p></li>`).join("")}</ol>`
     }</section>`;
-  } else {
+  } else if (settingsTab === "backup") {
     settingsDetail = `<section class="panel"><p class="tiny">Backup</p>
         <div class="split" style="margin-top:.75rem">
           <button data-act="export">Export</button>
@@ -1153,12 +1200,23 @@ function render(){
         </div>
         <p class="note" style="margin-top:.75rem">Export downloads a JSON backup. Import overwrites local data from a previous file.</p>
       </section>`;
+  } else {
+    const updateBtn = ui.updateReady
+      ? `<button class="split" style="width:100%;margin-top:.75rem"><span class="primary" style="display:flex;width:100%;min-height:2.75rem;border-radius:.75rem;align-items:center;justify-content:center;font-weight:700" data-act="apply-update">Update now</span></button>`
+      : "";
+    settingsDetail = `<section class="panel"><p class="tiny">About</p>
+        <p style="margin:.75rem 0 0;font-size:1rem;font-weight:700">${esc(ui.appVersion || APP_VERSION)}</p>
+        <p class="note" style="margin-top:.5rem">Checks GitHub Pages for a new build. Tap Update now to reload onto it.</p>
+        <button class="split" style="width:100%;margin-top:.75rem"><span class="primary" style="display:flex;width:100%;min-height:2.75rem;border-radius:.75rem;align-items:center;justify-content:center;font-weight:700${ui.updateChecking?";opacity:.7":""}" data-act="check-update">${ui.updateChecking?"Checking…":"Check for update"}</span></button>
+        ${updateBtn}
+      </section>`;
   }
   const settingsNav = [
     ["program","Program"],
     ["sound","Sound"],
     ["history","Session log"],
     ["backup","Backup"],
+    ["about","About"],
   ].map(([tab,label]) => `<button type="button" data-act="settings-tab" data-tab="${tab}" class="${settingsTab===tab?"on":""}">${label}</button>`).join("");
   const settings = ui.panel==="settings" ? `<div class="settings-sheet" role="dialog" aria-modal="true" aria-label="Settings"><div class="settings-sheet-inner">
     <div class="settings-head"><h2>Settings</h2><button class="icon-btn" data-act="panel" data-p="settings" aria-label="Close">${I.x}</button></div>
@@ -1174,6 +1232,9 @@ function render(){
   const hint = isFile
     ? `<div class="help">This file can’t stay on the home screen. Open the web link in Chrome or Safari, then tap <b style="color:var(--fg)">Install</b>.</div>`
     : (ui.installHint && !ui.installed ? `<div class="help">iPhone: Share → <b style="color:var(--fg)">Add to Home Screen</b>. Android: Chrome menu → <b style="color:var(--fg)">Add to Home screen</b>.</div>` : "");
+  const updateBanner = ui.updateReady
+    ? `<div class="help" style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap"><span style="color:var(--fg);font-weight:600">Update available</span><button class="install primary" data-act="apply-update">Update now</button></div>`
+    : "";
 
   document.getElementById("app").innerHTML = `
     <header>
@@ -1193,6 +1254,7 @@ function render(){
         <div style="display:flex;gap:.375rem"><button class="icon-btn" data-act="rest" data-d="-15">−</button>
         <button class="icon-btn" data-act="rest" data-d="15">+</button></div></div>`:""}
     </header>
+    ${updateBanner}
     ${hint}
     <div class="space">${cards}</div>
     <div class="split">
@@ -1236,7 +1298,7 @@ document.getElementById("app").addEventListener("click", (e) => {
   else if (act==="rest") adjustRest(+btn.dataset.d);
   else if (act==="day") { setDay(+btn.dataset.d); stopRest(); render(); }
   else if (act==="program") { setProgram(btn.dataset.id, 0); stopRest(); ui.panel="none"; toast(`${getProgram(btn.dataset.id).name} loaded`); render(); }
-  else if (act==="settings-tab") { const tab=btn.dataset.tab; if (["program","sound","history","backup"].includes(tab)) { ui.settingsTab=tab; render(); } }
+  else if (act==="settings-tab") { const tab=btn.dataset.tab; if (["program","sound","history","backup","about"].includes(tab)) { ui.settingsTab=tab; render(); } }
   else if (act==="panel") { const next=btn.dataset.p; const opening=ui.panel!==next; ui.panel=opening?next:"none"; if (!opening || next!=="add") ui.pending=null; render(); }
   else if (act==="remove") { if (!removeExercise(btn.dataset.id)) toast("Keep at least one lift"); else toast(`${btn.dataset.name} removed`); render(); }
   else if (act==="pick") {
@@ -1259,6 +1321,8 @@ document.getElementById("app").addEventListener("click", (e) => {
   else if (act==="reset") resetChecks();
   else if (act==="export") exportBackup();
   else if (act==="import") importBackup();
+  else if (act==="check-update") checkForUpdate();
+  else if (act==="apply-update") applyUpdate();
   else if (act==="cue-pack") { state.cuePack = normalizeCuePack(btn.dataset.id); save(); render(); }
   else if (act==="preview-sound") previewSound();
   else if (act==="vol") {
@@ -1296,9 +1360,38 @@ try {
   try { render(); } catch {}
 }
 if (location.protocol.startsWith("http") && "serviceWorker" in navigator) {
+  function watchInstalling(worker){
+    if (!worker) return;
+    worker.addEventListener("statechange", () => {
+      if (worker.state === "installed" && navigator.serviceWorker.controller) {
+        ui.updateReady = true;
+        render();
+      }
+    });
+  }
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (ui.refreshing) location.reload();
+  });
   navigator.serviceWorker.register(new URL("sw.js", location.href).href).then((reg) => {
-    try { if (reg && typeof reg.update === "function") reg.update(); } catch {}
+    ui.swReg = reg;
+    try { reg.update(); } catch {}
+    reg.addEventListener("updatefound", () => watchInstalling(reg.installing));
+    if (reg.waiting && navigator.serviceWorker.controller) {
+      ui.updateReady = true;
+      render();
+    }
+    watchInstalling(reg.installing);
   }).catch(() => {});
+  const pokeUpdate = () => {
+    if (document.visibilityState !== "visible") return;
+    const reg = ui.swReg;
+    if (reg && typeof reg.update === "function") {
+      try { reg.update(); } catch {}
+    }
+  };
+  document.addEventListener("visibilitychange", pokeUpdate);
+  window.addEventListener("focus", pokeUpdate);
+  setInterval(pokeUpdate, 60 * 60 * 1000);
 }
 </script>
 </body>
