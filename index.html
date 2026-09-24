@@ -153,18 +153,18 @@ const PROGRAMS = [
     bb("tp-press","Shoulder press",3,10,60,"Mon / Wed / Fri · 3 × 10",{weight:0,cap:16,note:"Press overhead, don’t shrug. Lower to ear height with control."}),
     bw("tp-situp","Sit-ups",3,10,60,"Mon / Wed / Fri · 3 × 10",{nocap:true,note:"Feet planted. Curl up, don’t yank neck. Lower under control."}),
   ]}]},
-  {id:"ember", name:"EMBER", blurb:"Beginner 3× week. Two sets. A B A, then B A B.", days:[
+  {id:"ember", name:"EMBER", blurb:"Beginner 3× week. Wave: 3×6 ×3 clean → 3×8 ×3 clean → 3×6 +2.5kg.", days:[
     {label:"A", exercises:[
-      bb("em-squat","Squats",2,6,75,"Day A",{weight:0,cap:12,note:"Sit to a chair if needed. Hold a plate when 12 is easy."}),
-      bb("em-bench","Barbell bench",2,6,90,"Day A",{weight:20,cap:10,note:"Empty bar first if needed. Feet planted, lower to chest, press up."}),
-      bb("em-row","Bent-over row",2,8,60,"Day A",{weight:2.5,cap:14,note:"2.5 kg plates. Hinge, pull to ribs, lower slow."}),
-      bw("em-deadbug","Dead bug",2,6,45,"Day A",{bilateral:true,cap:12,note:"Lower back glued to the floor. Opposite arm and leg."}),
+      bb("em-squat","Squats",3,6,75,"Day A",{weight:0,cap:12,note:"Sit to a chair if needed. Hold a plate when ready."}),
+      bb("em-bench","Barbell bench",3,6,90,"Day A",{weight:20,cap:10,note:"Empty bar first if needed. Feet planted, lower to chest, press up."}),
+      bb("em-row","Bent-over row",3,6,60,"Day A",{weight:2.5,cap:14,note:"2.5 kg plates. Hinge, pull to ribs, lower slow."}),
+      bw("em-deadbug","Dead bug",3,6,45,"Day A",{bilateral:true,cap:12,note:"Lower back glued to the floor. Opposite arm and leg."}),
     ]},
     {label:"B", exercises:[
-      bb("em-rdl","Plate RDL",2,6,75,"Day B",{weight:2.5,cap:12,note:"2.5 kg plates in both hands. Soft knees, hips back, flat back."}),
-      bb("em-press","Shoulder press",2,6,60,"Day B",{weight:2.5,cap:12,note:"2.5 kg plates. Press overhead, don’t shrug."}),
-      bw("em-heaves","Heaves (feet assisted)",2,5,90,"Day B",{nocap:true,note:"Hang from the bar. Keep feet on the floor or a box for assist. Chin over bar, lower with control."}),
-      bw("em-plank","Plank",2,15,45,"Day B",{cap:45,note:"Seconds, not reps. Knees down if needed."}),
+      bb("em-rdl","Plate RDL",3,6,75,"Day B",{weight:2.5,cap:12,note:"2.5 kg plates in both hands. Soft knees, hips back, flat back."}),
+      bb("em-press","Shoulder press",3,6,60,"Day B",{weight:2.5,cap:12,note:"2.5 kg plates. Press overhead, don’t shrug."}),
+      bw("em-heaves","Heaves (feet assisted)",3,6,90,"Day B",{nocap:true,note:"Hang from the bar. Keep feet on the floor or a box for assist. Chin over bar, lower with control."}),
+      bw("em-plank","Plank",3,20,45,"Day B",{cap:45,note:"Seconds, not reps. Knees down if needed."}),
     ]},
   ]},
   {id:"five-by-five", name:"5×5", blurb:"StrongLifts-style. Alternate A / B, add 2.5 kg when all 5s are clean.", days:[
@@ -743,6 +743,33 @@ function logSession(){
         }
       } else notes.push(`${ex.name}: no-rep ${failStreak}/3 — stay at ${reps}`);
       return {...ex, streak:0, failStreak, reps, weight, setsLog: blankSets(ex.sets)};
+    }
+    const isEmber = state.programId === "ember" || String(ex.id||"").startsWith("em-");
+    if (isEmber) {
+      // Ember double-progression wave only (no carry-forward / generic +2)
+      let streak = (ex.streak||0) + 1;
+      let {reps, weight} = ex;
+      if (streak >= 3) {
+        const isPlank = ex.id === "em-plank" || /seconds/i.test(ex.note||"");
+        if (isPlank) {
+          if (reps < 30) {
+            reps = 30; streak = 0;
+            notes.push(`${ex.name}: wave → 3×30s`);
+          } else {
+            reps = 20; streak = 0;
+            notes.push(`${ex.name}: wave → 3×20s (no kg)`);
+          }
+        } else if (reps <= 6) {
+          reps = 8; streak = 0;
+          notes.push(`${ex.name}: wave → 3×8`);
+        } else {
+          reps = 6;
+          weight = +(weight+2.5).toFixed(1);
+          streak = 0;
+          notes.push(`${ex.name}: wave → 3×6 +2.5kg → ${weight}kg`);
+        }
+      } else notes.push(`${ex.name}: clean streak ${streak}/3 at 3×${reps}`);
+      return {...ex, streak, failStreak:0, reps, weight, setsLog: blankSets(ex.sets)};
     }
     const minLogged = Math.min(...setsLog.map(s => s.reps ?? ex.reps));
     let {reps, weight} = ex;
