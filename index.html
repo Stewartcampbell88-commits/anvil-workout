@@ -95,7 +95,12 @@
     .settings-sheet-inner { max-width:28rem; margin:0 auto; width:100%; flex:1; min-height:0; display:flex; flex-direction:column; }
     .settings-head { position:sticky; top:0; z-index:1; display:flex; align-items:center; justify-content:space-between; gap:0.75rem; background:var(--bg); padding:0.25rem 0 0.75rem; border-bottom:1px solid var(--border); flex-shrink:0; }
     .settings-head h2 { margin:0; font-size:1.25rem; letter-spacing:0.04em; }
-    .settings-body { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:0.75rem 0 1rem; }
+    .settings-body { flex:1; min-height:0; display:flex; flex-direction:column; padding:0.75rem 0 0; overflow:hidden; }
+    .settings-layout { display:flex; gap:0.75rem; flex:1; min-height:0; }
+    .settings-nav { width:6.25rem; flex-shrink:0; display:flex; flex-direction:column; gap:0.375rem; }
+    .settings-nav button { width:100%; min-height:2.75rem; border-radius:0.75rem; padding:0.5rem; font-size:0.75rem; font-weight:700; background:var(--border); text-align:center; line-height:1.2; color:var(--fg); }
+    .settings-nav button.on { background:var(--primary); color:var(--primary-fg); }
+    .settings-detail { flex:1; min-width:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding-bottom:1rem; }
   </style>
 </head>
 <body>
@@ -488,7 +493,7 @@ let state = {
   soundVolume: 0.7,
   cuePack: "chime",
 };
-let ui = { remain:0, running:false, isGo:false, panel:"none", pending:null, pickSets:3, pickReps:8, installHint:false, installed:false, toastTimer:null };
+let ui = { remain:0, running:false, isGo:false, panel:"none", settingsTab:"program", pending:null, pickSets:3, pickReps:8, installHint:false, installed:false, toastTimer:null };
 let remainVal = 0, lastCue = -1, tick = null, deferredInstall = null;
 try {
   ui.installed = window.matchMedia("(display-mode: standalone)").matches || Boolean(navigator.standalone) || /ANVIL-APP/.test(navigator.userAgent) || location.hostname === "appassets.androidplatform.net";
@@ -834,6 +839,7 @@ function onLog(){
   const notes = logSession();
   toast("Session logged", notes.slice(0,3).join(" · "));
   ui.panel = "settings";
+  ui.settingsTab = "history";
   stopRest();
   render();
 }
@@ -945,31 +951,49 @@ function render(){
   }</section>` : "";
 
   const volPct = Math.round(clampVolume(state.soundVolume) * 100);
-  const settings = ui.panel==="settings" ? `<div class="settings-sheet" role="dialog" aria-modal="true" aria-label="Settings"><div class="settings-sheet-inner">
-    <div class="settings-head"><h2>Settings</h2><button class="icon-btn" data-act="panel" data-p="settings" aria-label="Close">${I.x}</button></div>
-    <div class="settings-body">
-      <section class="panel"><p class="tiny">Program</p><ul style="margin:.75rem 0 0;padding:0;list-style:none;display:grid;gap:.5rem">${
-        PROGRAMS.map(p=>`<li><button class="prog${p.id===state.programId?" on":""}" data-act="program" data-id="${p.id}"><span style="font-size:1rem;font-weight:700">${esc(p.name)}</span><span class="note" style="${p.id===state.programId?"opacity:.8;color:inherit":""}">${esc(p.blurb)}</span></button></li>`).join("")
-      }</ul></section>
-      <section class="panel"><p class="tiny">Sound</p>
+  const settingsTab = ["program","sound","history","backup"].includes(ui.settingsTab) ? ui.settingsTab : "program";
+  ui.settingsTab = settingsTab;
+  let settingsDetail = "";
+  if (settingsTab === "program") {
+    settingsDetail = `<section class="panel"><p class="tiny">Program</p><ul style="margin:.75rem 0 0;padding:0;list-style:none;display:grid;gap:.5rem">${
+      PROGRAMS.map(p=>`<li><button class="prog${p.id===state.programId?" on":""}" data-act="program" data-id="${p.id}"><span style="font-size:1rem;font-weight:700">${esc(p.name)}</span><span class="note" style="${p.id===state.programId?"opacity:.8;color:inherit":""}">${esc(p.blurb)}</span></button></li>`).join("")
+    }</ul></section>`;
+  } else if (settingsTab === "sound") {
+    settingsDetail = `<section class="panel"><p class="tiny">Sound</p>
         <p class="tiny" style="margin-top:.75rem;letter-spacing:.08em">Volume</p>
         <div class="vol-row"><input type="range" min="0" max="100" step="1" value="${volPct}" data-act="vol" aria-label="Sound volume" /><span class="vol-lab" data-vol-label>${volPct}%</span></div>
         <p class="tiny" style="margin-top:.875rem;letter-spacing:.08em">Rest cues</p>
         <div class="cue-list">${Object.values(CUE_PACKS).map(p=>`<button class="prog${p.id===state.cuePack?" on":""}" data-act="cue-pack" data-id="${p.id}"><span style="font-size:1rem;font-weight:700">${esc(p.name)}</span><span class="note" style="${p.id===state.cuePack?"opacity:.8;color:inherit":""}">${esc(p.blurb)}</span></button>`).join("")}</div>
         <button class="split" style="width:100%;margin-top:.75rem"><span class="primary" style="display:flex;width:100%;min-height:2.75rem;border-radius:.75rem;align-items:center;justify-content:center;font-weight:700;gap:.5rem" data-act="preview-sound">${I.sound} Preview</span></button>
         <p class="note" style="margin-top:.75rem">Cues fire on the last 3 seconds of rest. Tone packs use soft app-style chimes; voice packs use real Aussie audio (not browser TTS). Volume 0 mutes everything.</p>
-      </section>
-      <section class="panel"><p class="tiny">Session log</p>${
-        state.history.length===0 ? `<p class="note">No sessions yet. Tick every set, then log.</p>`
-        : `<ol style="margin:.5rem 0 0;padding:0;list-style:none">${state.history.slice(0,8).map(h=>`<li style="margin-top:.75rem"><p style="margin:0;font-size:.875rem;font-weight:600">${esc(fmtWhen(h.date))}</p><p class="note">${esc(h.notes.join(" · "))}</p></li>`).join("")}</ol>`
-      }</section>
-      <section class="panel"><p class="tiny">Backup</p>
+      </section>`;
+  } else if (settingsTab === "history") {
+    settingsDetail = `<section class="panel"><p class="tiny">Session log</p>${
+      state.history.length===0 ? `<p class="note">No sessions yet. Tick every set, then log.</p>`
+      : `<ol style="margin:.5rem 0 0;padding:0;list-style:none">${state.history.slice(0,8).map(h=>`<li style="margin-top:.75rem"><p style="margin:0;font-size:.875rem;font-weight:600">${esc(fmtWhen(h.date))}</p><p class="note">${esc(h.notes.join(" · "))}</p></li>`).join("")}</ol>`
+    }</section>`;
+  } else {
+    settingsDetail = `<section class="panel"><p class="tiny">Backup</p>
         <div class="split" style="margin-top:.75rem">
           <button data-act="export">Export</button>
           <button data-act="import">Import</button>
         </div>
         <p class="note" style="margin-top:.75rem">Export downloads a JSON backup. Import overwrites local data from a previous file.</p>
-      </section>
+      </section>`;
+  }
+  const settingsNav = [
+    ["program","Program"],
+    ["sound","Sound"],
+    ["history","Session log"],
+    ["backup","Backup"],
+  ].map(([tab,label]) => `<button type="button" data-act="settings-tab" data-tab="${tab}" class="${settingsTab===tab?"on":""}">${label}</button>`).join("");
+  const settings = ui.panel==="settings" ? `<div class="settings-sheet" role="dialog" aria-modal="true" aria-label="Settings"><div class="settings-sheet-inner">
+    <div class="settings-head"><h2>Settings</h2><button class="icon-btn" data-act="panel" data-p="settings" aria-label="Close">${I.x}</button></div>
+    <div class="settings-body">
+      <div class="settings-layout">
+        <nav class="settings-nav" aria-label="Settings sections">${settingsNav}</nav>
+        <div class="settings-detail">${settingsDetail}</div>
+      </div>
     </div>
   </div></div>` : "";
 
@@ -1061,6 +1085,7 @@ document.getElementById("app").addEventListener("click", (e) => {
   else if (act==="rest") adjustRest(+btn.dataset.d);
   else if (act==="day") { setDay(+btn.dataset.d); stopRest(); render(); }
   else if (act==="program") { setProgram(btn.dataset.id, 0); stopRest(); ui.panel="none"; toast(`${getProgram(btn.dataset.id).name} loaded`); render(); }
+  else if (act==="settings-tab") { const tab=btn.dataset.tab; if (["program","sound","history","backup"].includes(tab)) { ui.settingsTab=tab; render(); } }
   else if (act==="panel") { const next=btn.dataset.p; const opening=ui.panel!==next; ui.panel=opening?next:"none"; if (!opening || next!=="add") ui.pending=null; render(); }
   else if (act==="remove") { if (!removeExercise(btn.dataset.id)) toast("Keep at least one lift"); else toast(`${btn.dataset.name} removed`); render(); }
   else if (act==="pick") {
