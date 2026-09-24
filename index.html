@@ -148,6 +148,29 @@ function nextWaveStep(reps, weight){
   const w = +(weight + 2.5).toFixed(1);
   return {reps:6, weight:w, note:`wave → 3×6 +2.5kg → ${w}kg`};
 }
+function normalizeWaveTargets(){
+  const pid = state?.programId;
+  if (pid !== "anvil" && pid !== "ember") return false;
+  let changed = false;
+  const progress = {...(state.liftProgress || {})};
+  state.exercises = (state.exercises || []).map(ex => {
+    if (isPlankSeconds(ex) || ex.reps == null || WAVE_REPS.includes(ex.reps)) return ex;
+    const reps = snapWaveRep(ex.reps);
+    changed = true;
+    const p = progress[ex.id];
+    if (p && typeof p === "object" && p.reps !== reps) progress[ex.id] = {...p, reps};
+    return {...ex, reps};
+  });
+  for (const [id, p] of Object.entries(progress)) {
+    if (!p || typeof p !== "object" || p.reps == null) continue;
+    if (id === "em-plank" || /seconds/i.test(p.note||"")) continue;
+    if (WAVE_REPS.includes(p.reps)) continue;
+    progress[id] = {...p, reps: snapWaveRep(p.reps)};
+    changed = true;
+  }
+  if (changed) state.liftProgress = progress;
+  return changed;
+}
 
 function bb(id,name,sets,reps,rest,block,extra={}) {
   return {id,name,sets,reps,rest,weight: extra.weight ?? 20, block, ...extra};
@@ -585,6 +608,7 @@ function load(){
       soundVolume: clampVolume(raw.soundVolume ?? 0.7),
       cuePack: normalizeCuePack(raw.cuePack),
     };
+    if (normalizeWaveTargets()) save();
   } catch {}
 }
 function save(){
@@ -1173,6 +1197,7 @@ document.getElementById("app").addEventListener("click", (e) => {
 
 try {
   load();
+  if (normalizeWaveTargets()) save();
   render();
 } catch {
   try { localStorage.removeItem(STORAGE); } catch {}
@@ -1180,7 +1205,9 @@ try {
   try { render(); } catch {}
 }
 if (location.protocol.startsWith("http") && "serviceWorker" in navigator) {
-  navigator.serviceWorker.register(new URL("sw.js", location.href).href).catch(() => {});
+  navigator.serviceWorker.register(new URL("sw.js", location.href).href).then((reg) => {
+    try { if (reg && typeof reg.update === "function") reg.update(); } catch {}
+  }).catch(() => {});
 }
 </script>
 </body>
