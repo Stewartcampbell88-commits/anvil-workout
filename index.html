@@ -104,6 +104,14 @@
     .settings-nav button { width:100%; min-height:2.75rem; border-radius:0.75rem; padding:0.5rem; font-size:0.75rem; font-weight:700; background:var(--border); text-align:center; line-height:1.2; color:var(--fg); }
     .settings-nav button.on { background:var(--primary); color:var(--primary-fg); }
     .settings-detail { flex:1; min-width:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding-bottom:1rem; }
+
+    .bw-num { font-family:var(--display); font-size:3.5rem; font-weight:700; font-variant-numeric:tabular-nums; line-height:1; min-width:5rem; text-align:center; }
+    .bw-unit { font-size:1.125rem; font-weight:700; color:var(--muted); margin-left:0.25rem; }
+    .bw-step-row { display:flex; align-items:center; justify-content:center; gap:0.75rem; margin:1.25rem 0; }
+    .bw-step-row .icon-btn { width:3.25rem; height:3.25rem; font-size:1.5rem; font-weight:700; }
+    .progress-select { width:100%; min-height:2.75rem; border-radius:0.75rem; padding:0 0.75rem; font:inherit; font-weight:600; background:var(--border); color:var(--fg); border:0; margin-top:0.5rem; }
+    svg.chart-svg { width:100%; height:auto; display:block; stroke:none; fill:none; }
+    .chart-empty { color:var(--muted); font-size:0.875rem; margin:0.75rem 0 0; }
   </style>
 </head>
 <body>
@@ -114,7 +122,7 @@
 <input type="file" id="import-file" accept="application/json,.json" class="hide" />
 <script>
 const STORAGE = "anvil_app_v3";
-const APP_VERSION = "anvil-v23";
+const APP_VERSION = "anvil-v24";
 const SET_OPTS = [1,2,3,4,5];
 const REP_OPTS = [5,6,8,10,12,15,20,30,40];
 const WAVE_REPS = [6, 8, 10, 12];
@@ -600,10 +608,11 @@ let state = {
   exercises: seedProgram("anvil", 0),
   history: [],
   liftProgress: {},
+  bodyWeightLog: [],
   soundVolume: 0.7,
   cuePack: "chime",
 };
-let ui = { remain:0, running:false, isGo:false, panel:"none", settingsTab:"program", pending:null, pickSets:3, pickReps:8, installHint:false, installed:false, toastTimer:null, swReg:null, updateReady:false, updateChecking:false, refreshing:false, appVersion: APP_VERSION };
+let ui = { remain:0, running:false, isGo:false, panel:"none", settingsTab:"program", pending:null, pickSets:3, pickReps:8, installHint:false, installed:false, toastTimer:null, swReg:null, updateReady:false, updateChecking:false, refreshing:false, appVersion: APP_VERSION, progressLiftId:null, bwDraftKg:null, bwLinkSession:false };
 let remainVal = 0, lastCue = -1, tick = null, deferredInstall = null;
 try {
   ui.installed = window.matchMedia("(display-mode: standalone)").matches || Boolean(navigator.standalone) || /ANVIL-APP/.test(navigator.userAgent) || location.hostname === "appassets.androidplatform.net";
@@ -660,6 +669,7 @@ function load(){
       liftProgress,
       exercises: applyProgress(baseExs, liftProgress, program.id),
       history: raw.history || [],
+      bodyWeightLog: Array.isArray(raw.bodyWeightLog) ? raw.bodyWeightLog : [],
       soundVolume: clampVolume(raw.soundVolume ?? 0.7),
       cuePack: normalizeCuePack(raw.cuePack),
     };
@@ -670,6 +680,7 @@ function save(){
   localStorage.setItem(STORAGE, JSON.stringify({
     programId: state.programId, dayIndex: state.dayIndex,
     exercises: state.exercises, history: state.history, liftProgress: state.liftProgress,
+    bodyWeightLog: state.bodyWeightLog || [],
     soundVolume: clampVolume(state.soundVolume), cuePack: normalizeCuePack(state.cuePack),
   }));
 }
@@ -678,6 +689,7 @@ function backupPayload(){
   return {
     programId: state.programId, dayIndex: state.dayIndex,
     exercises: state.exercises, history: state.history, liftProgress: state.liftProgress,
+    bodyWeightLog: state.bodyWeightLog || [],
     soundVolume: clampVolume(state.soundVolume), cuePack: normalizeCuePack(state.cuePack),
   };
 }
@@ -686,12 +698,13 @@ function looksLikeAppState(obj){
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return false;
   if (obj.exercises !== undefined && !Array.isArray(obj.exercises)) return false;
   if (obj.history !== undefined && !Array.isArray(obj.history)) return false;
+  if (obj.bodyWeightLog !== undefined && !Array.isArray(obj.bodyWeightLog)) return false;
   if (obj.liftProgress !== undefined && (typeof obj.liftProgress !== "object" || obj.liftProgress === null || Array.isArray(obj.liftProgress))) return false;
   if (obj.programId !== undefined && typeof obj.programId !== "string") return false;
   if (obj.dayIndex !== undefined && typeof obj.dayIndex !== "number") return false;
   if (obj.soundVolume !== undefined && typeof obj.soundVolume !== "number") return false;
   if (obj.cuePack !== undefined && typeof obj.cuePack !== "string") return false;
-  return Array.isArray(obj.exercises) || Array.isArray(obj.history) || typeof obj.programId === "string" || (obj.liftProgress && typeof obj.liftProgress === "object") || typeof obj.soundVolume === "number" || typeof obj.cuePack === "string";
+  return Array.isArray(obj.exercises) || Array.isArray(obj.history) || Array.isArray(obj.bodyWeightLog) || typeof obj.programId === "string" || (obj.liftProgress && typeof obj.liftProgress === "object") || typeof obj.soundVolume === "number" || typeof obj.cuePack === "string";
 }
 
 function exportBackup(){
@@ -730,6 +743,7 @@ function importBackup(){
         exercises: Array.isArray(raw.exercises) ? raw.exercises : [],
         history: Array.isArray(raw.history) ? raw.history : [],
         liftProgress: raw.liftProgress && typeof raw.liftProgress === "object" ? raw.liftProgress : {},
+        bodyWeightLog: Array.isArray(raw.bodyWeightLog) ? raw.bodyWeightLog : [],
         soundVolume: clampVolume(raw.soundVolume ?? 0.7),
         cuePack: normalizeCuePack(raw.cuePack),
       }));
@@ -815,12 +829,16 @@ function removeExercise(id){
 }
 function logSession(){
   const notes = [];
+  const lifts = [];
   const exercises = state.exercises.map(ex => {
     const touched = ex.setsLog.some(s => s.ok || s.miss);
     if (ex.skipped || !touched) {
       if (ex.skipped) notes.push(`${ex.name}: skipped`);
       return {...ex, skipped:false, setsLog: blankSets(ex.sets)};
     }
+    // Snapshot working targets before wave / progression bumps
+    const workedWeight = ex.weight;
+    const workedReps = ex.reps;
     const all = ex.setsLog.every(s => s.ok || s.miss);
     // Enforce: ok only when reps >= target; otherwise treat as miss
     const setsLog = ex.setsLog.map(s => {
@@ -830,6 +848,7 @@ function logSession(){
       return {ok:false, miss:true, reps:r};
     });
     const clean = all && setsLog.every(s => s.ok && !s.miss);
+    lifts.push({ id: ex.id, name: ex.name, weight: workedWeight, reps: workedReps, clean });
     if (!all) { notes.push(`${ex.name}: incomplete`); return {...ex, setsLog: blankSets(ex.sets)}; }
     if (!clean) {
       let failStreak = (ex.failStreak||0)+1;
@@ -931,7 +950,7 @@ function logSession(){
   });
   state.exercises = exercises;
   state.liftProgress = captureProgress(exercises, state.liftProgress);
-  state.history = [{date:new Date().toISOString(), notes}, ...state.history].slice(0,30);
+  state.history = [{date:new Date().toISOString(), notes, lifts}, ...state.history].slice(0,60);
   save();
   return notes;
 }
@@ -1053,10 +1072,129 @@ function onLog(){
   if (!anyWork) { toast("Tick a set first — blank lifts are skipped"); return; }
   const notes = logSession();
   toast("Session logged", notes.slice(0,3).join(" · "));
-  ui.panel = "settings";
-  ui.settingsTab = "history";
+  const lastKg = state.bodyWeightLog[0]?.kg;
+  ui.bwDraftKg = (typeof lastKg === "number" && lastKg > 0) ? lastKg : null;
+  ui.bwLinkSession = true;
+  ui.panel = "bodyweight";
   stopRest();
   render();
+}
+
+function openBodyWeightPrompt(linkSession){
+  const lastKg = state.bodyWeightLog[0]?.kg;
+  ui.bwDraftKg = (typeof lastKg === "number" && lastKg > 0) ? lastKg : null;
+  ui.bwLinkSession = !!linkSession;
+  ui.panel = "bodyweight";
+  render();
+}
+
+function bumpBodyWeight(delta){
+  const base = (typeof ui.bwDraftKg === "number" && ui.bwDraftKg > 0) ? ui.bwDraftKg : (state.bodyWeightLog[0]?.kg || 70);
+  ui.bwDraftKg = Math.max(20, Math.min(300, +(base + delta).toFixed(1)));
+  render();
+}
+
+function saveBodyWeight(){
+  const kg = typeof ui.bwDraftKg === "number" ? +ui.bwDraftKg.toFixed(1) : 0;
+  if (!(kg > 0)) { toast("Set your body weight"); return; }
+  const date = (ui.bwLinkSession && state.history[0]?.date) ? state.history[0].date : new Date().toISOString();
+  if (ui.bwLinkSession && state.history[0]) {
+    state.history[0] = {...state.history[0], bodyWeightKg: kg};
+  }
+  state.bodyWeightLog = [{ date, kg }, ...(state.bodyWeightLog || [])].slice(0, 90);
+  save();
+  toast("Body weight saved", `${kg} kg`);
+  ui.bwLinkSession = false;
+  ui.panel = "settings";
+  ui.settingsTab = "progress";
+  render();
+}
+
+function skipBodyWeight(){
+  ui.bwLinkSession = false;
+  ui.panel = "settings";
+  ui.settingsTab = "progress";
+  render();
+}
+
+function liftSeries(liftId){
+  const pts = [];
+  for (let i = (state.history||[]).length - 1; i >= 0; i--) {
+    const h = state.history[i];
+    if (!Array.isArray(h.lifts)) continue;
+    const hit = h.lifts.find(l => l.id === liftId);
+    if (!hit) continue;
+    pts.push({ t: h.date, weight: Number(hit.weight)||0, reps: Number(hit.reps)||0, clean: !!hit.clean, name: hit.name });
+  }
+  return pts;
+}
+
+function bodySeries(){
+  const log = state.bodyWeightLog || [];
+  const pts = [];
+  for (let i = log.length - 1; i >= 0; i--) {
+    const e = log[i];
+    if (!e || !(Number(e.kg) > 0)) continue;
+    pts.push({ t: e.date, y: Number(e.kg) });
+  }
+  return pts;
+}
+
+function progressLiftOptions(){
+  const map = new Map();
+  for (const h of (state.history || [])) {
+    if (!Array.isArray(h.lifts)) continue;
+    for (const l of h.lifts) {
+      if (!l?.id) continue;
+      map.set(l.id, l.name || l.id);
+    }
+  }
+  return [...map.entries()].map(([id, name]) => ({ id, name }));
+}
+
+function isRepsChartLift(pts){
+  if (!pts.length) return false;
+  const last = pts[pts.length - 1];
+  const allZeroW = pts.every(p => !(p.weight > 0));
+  return allZeroW || !(last.weight > 0);
+}
+
+function svgLineChart(points, { yLabel } = {}){
+  const W = 320, H = 140;
+  const padL = 36, padR = 12, padT = 16, padB = 28;
+  if (!points.length) {
+    return `<p class="chart-empty">No data yet.</p>`;
+  }
+  const ys = points.map(p => p.y);
+  let yMin = Math.min(...ys);
+  let yMax = Math.max(...ys);
+  if (yMin === yMax) { yMin = yMin - 1; yMax = yMax + 1; }
+  const yPad = (yMax - yMin) * 0.08;
+  yMin -= yPad; yMax += yPad;
+  const x0 = padL, x1 = W - padR, y0 = padT, y1 = H - padB;
+  const n = points.length;
+  const coords = points.map((p, i) => {
+    const x = n === 1 ? (x0 + x1) / 2 : x0 + (i / (n - 1)) * (x1 - x0);
+    const y = y1 - ((p.y - yMin) / (yMax - yMin)) * (y1 - y0);
+    return { x, y, ...p };
+  });
+  const poly = coords.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(" ");
+  const dots = coords.map(c => `<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="3.5" fill="var(--primary)" />`).join("");
+  const fmtY = (v) => (Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1));
+  const minLab = fmtY(Math.min(...ys));
+  const maxLab = fmtY(Math.max(...ys));
+  const firstDate = points[0].t ? fmtWhen(points[0].t).split("·")[0].trim() : "";
+  const lastDate = points[points.length-1].t ? fmtWhen(points[points.length-1].t).split("·")[0].trim() : "";
+  return `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(yLabel||"chart")}">
+    <line x1="${x0}" y1="${y0}" x2="${x0}" y2="${y1}" stroke="var(--border)" stroke-width="1"/>
+    <line x1="${x0}" y1="${y1}" x2="${x1}" y2="${y1}" stroke="var(--border)" stroke-width="1"/>
+    <text x="4" y="${y0+4}" fill="var(--muted)" font-size="10">${esc(maxLab)}</text>
+    <text x="4" y="${y1}" fill="var(--muted)" font-size="10">${esc(minLab)}</text>
+    <text x="${x0}" y="${H-6}" fill="var(--muted)" font-size="9">${esc(firstDate)}</text>
+    <text x="${x1}" y="${H-6}" fill="var(--muted)" font-size="9" text-anchor="end">${esc(lastDate)}</text>
+    <polyline points="${poly}" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    ${dots}
+  </svg>`;
 }
 
 function renderTimerOnly(){
@@ -1171,7 +1309,7 @@ function render(){
   }</section>` : "";
 
   const volPct = Math.round(clampVolume(state.soundVolume) * 100);
-  const settingsTab = ["program","sound","history","backup","about"].includes(ui.settingsTab) ? ui.settingsTab : "program";
+  const settingsTab = ["program","sound","history","progress","backup","about"].includes(ui.settingsTab) ? ui.settingsTab : "program";
   ui.settingsTab = settingsTab;
   let settingsDetail = "";
   if (settingsTab === "program") {
@@ -1192,6 +1330,38 @@ function render(){
       state.history.length===0 ? `<p class="note">No sessions yet. Tick every set, then log.</p>`
       : `<ol style="margin:.5rem 0 0;padding:0;list-style:none">${state.history.slice(0,8).map(h=>`<li style="margin-top:.75rem"><p style="margin:0;font-size:.875rem;font-weight:600">${esc(fmtWhen(h.date))}</p><p class="note">${esc(h.notes.join(" · "))}</p></li>`).join("")}</ol>`
     }</section>`;
+  } else if (settingsTab === "progress") {
+    const bwPts = bodySeries();
+    const latestBw = state.bodyWeightLog[0]?.kg;
+    const bwChart = bwPts.length
+      ? svgLineChart(bwPts.map(p => ({ t: p.t, y: p.y })), { yLabel: "kg" })
+      : `<p class="chart-empty">Log a session or add a weigh-in.</p>`;
+    const liftOpts = progressLiftOptions();
+    if (!ui.progressLiftId || !liftOpts.some(o => o.id === ui.progressLiftId)) {
+      ui.progressLiftId = liftOpts[0]?.id || null;
+    }
+    const series = ui.progressLiftId ? liftSeries(ui.progressLiftId) : [];
+    const useReps = isRepsChartLift(series);
+    const liftPts = series.map(p => ({ t: p.t, y: useReps ? p.reps : p.weight }));
+    const lastName = series[series.length-1]?.name || "";
+    const secAxis = useReps && (/hang|plank/i.test(lastName) || /sec/i.test(lastName) || ui.progressLiftId==="em-plank");
+    const axisLabel = useReps ? (secAxis ? "sec" : "reps") : "kg";
+    const liftChart = liftPts.length
+      ? svgLineChart(liftPts, { yLabel: axisLabel })
+      : `<p class="chart-empty">Complete sessions to track lifts.</p>`;
+    const selectHtml = liftOpts.length
+      ? `<select class="progress-select" data-act="progress-lift" aria-label="Lift">${liftOpts.map(o=>`<option value="${esc(o.id)}"${o.id===ui.progressLiftId?" selected":""}>${esc(o.name)}</option>`).join("")}</select>`
+      : `<p class="note" style="margin-top:.5rem">No lifts logged yet.</p>`;
+    settingsDetail = `<section class="panel"><p class="tiny">Body weight</p>
+        <p style="margin:.5rem 0 0;font-size:1rem;font-weight:700">${latestBw!=null?`${esc(String(latestBw))} kg`:"—"}</p>
+        ${bwChart}
+        <button class="split" style="width:100%;margin-top:.75rem"><span class="primary" style="display:flex;width:100%;min-height:2.75rem;border-radius:.75rem;align-items:center;justify-content:center;font-weight:700" data-act="log-bw-now">Log body weight</span></button>
+      </section>
+      <section class="panel"><p class="tiny">Lifts</p>
+        ${selectHtml}
+        <p class="tiny" style="margin-top:.75rem;letter-spacing:.08em">${esc(axisLabel)}</p>
+        ${liftChart}
+      </section>`;
   } else if (settingsTab === "backup") {
     settingsDetail = `<section class="panel"><p class="tiny">Backup</p>
         <div class="split" style="margin-top:.75rem">
@@ -1215,9 +1385,30 @@ function render(){
     ["program","Program"],
     ["sound","Sound"],
     ["history","Session log"],
+    ["progress","Progress"],
     ["backup","Backup"],
     ["about","About"],
   ].map(([tab,label]) => `<button type="button" data-act="settings-tab" data-tab="${tab}" class="${settingsTab===tab?"on":""}">${label}</button>`).join("");
+  const bwShown = (typeof ui.bwDraftKg === "number" && ui.bwDraftKg > 0)
+    ? ui.bwDraftKg.toFixed(1).replace(/\.0$/, "")
+    : "—";
+  const bodyweight = ui.panel==="bodyweight" ? `<div class="settings-sheet" role="dialog" aria-modal="true" aria-label="Body weight"><div class="settings-sheet-inner">
+    <div class="settings-head"><h2>Body weight</h2><button class="icon-btn" data-act="skip-bw" aria-label="Close">${I.x}</button></div>
+    <div class="settings-body" style="justify-content:center">
+      <p class="note" style="text-align:center;margin:0">${ui.bwLinkSession?"After this session":"Weigh-in"}</p>
+      <div class="bw-step-row">
+        <button class="icon-btn" data-act="bw-step" data-d="-0.5" aria-label="Minus 0.5 kg">−</button>
+        <div style="display:flex;align-items:baseline;justify-content:center">
+          <span class="bw-num">${esc(bwShown)}</span><span class="bw-unit">kg</span>
+        </div>
+        <button class="icon-btn" data-act="bw-step" data-d="0.5" aria-label="Plus 0.5 kg">+</button>
+      </div>
+      <div class="split" style="margin-top:1rem">
+        <button class="primary" data-act="save-bw">Save</button>
+        <button data-act="skip-bw">Skip</button>
+      </div>
+    </div>
+  </div></div>` : "";
   const settings = ui.panel==="settings" ? `<div class="settings-sheet" role="dialog" aria-modal="true" aria-label="Settings"><div class="settings-sheet-inner">
     <div class="settings-head"><h2>Settings</h2><button class="icon-btn" data-act="panel" data-p="settings" aria-label="Close">${I.x}</button></div>
     <div class="settings-body">
@@ -1268,6 +1459,7 @@ function render(){
       <button data-act="reset">${I.reset} Reset</button>
     </div>
     <p class="foot">Tap the big number to complete that set (tap again clears). − / + dial that set’s reps — going below the target marks it failed (red). Leave a lift blank or skip — it won’t count. Ember / Anvil: 3 clean at a rung climbs 6→8→10→12, then 3×6 +2.5kg (plank waves 20→30→20s, no kg). Ember heaves ladder: hang → feet assist → negatives → full (auto-graduate after wave). Other programs: 3 clean → +2 reps (or +2.5 kg at cap). 3 short sessions → reset week (drop kg first if loaded).</p>
+    ${bodyweight}
     ${settings}
   `;
 }
@@ -1280,6 +1472,12 @@ document.getElementById("app").addEventListener("input", (e) => {
   save();
   const lab = document.querySelector("[data-vol-label]");
   if (lab) lab.textContent = `${Math.round(state.soundVolume * 100)}%`;
+});
+document.getElementById("app").addEventListener("change", (e) => {
+  const el = e.target.closest("[data-act=progress-lift]");
+  if (!el) return;
+  ui.progressLiftId = el.value || null;
+  render();
 });
 document.getElementById("app").addEventListener("click", (e) => {
   const btn = e.target.closest("[data-act]");
@@ -1298,7 +1496,7 @@ document.getElementById("app").addEventListener("click", (e) => {
   else if (act==="rest") adjustRest(+btn.dataset.d);
   else if (act==="day") { setDay(+btn.dataset.d); stopRest(); render(); }
   else if (act==="program") { setProgram(btn.dataset.id, 0); stopRest(); ui.panel="none"; toast(`${getProgram(btn.dataset.id).name} loaded`); render(); }
-  else if (act==="settings-tab") { const tab=btn.dataset.tab; if (["program","sound","history","backup","about"].includes(tab)) { ui.settingsTab=tab; render(); } }
+  else if (act==="settings-tab") { const tab=btn.dataset.tab; if (["program","sound","history","progress","backup","about"].includes(tab)) { ui.settingsTab=tab; render(); } }
   else if (act==="panel") { const next=btn.dataset.p; const opening=ui.panel!==next; ui.panel=opening?next:"none"; if (!opening || next!=="add") ui.pending=null; render(); }
   else if (act==="remove") { if (!removeExercise(btn.dataset.id)) toast("Keep at least one lift"); else toast(`${btn.dataset.name} removed`); render(); }
   else if (act==="pick") {
@@ -1331,6 +1529,10 @@ document.getElementById("app").addEventListener("click", (e) => {
     const lab = document.querySelector("[data-vol-label]");
     if (lab) lab.textContent = `${Math.round(state.soundVolume * 100)}%`;
   }
+  else if (act==="save-bw") saveBodyWeight();
+  else if (act==="skip-bw") skipBodyWeight();
+  else if (act==="bw-step") bumpBodyWeight(+btn.dataset.d);
+  else if (act==="log-bw-now") openBodyWeightPrompt(false);
   else if (act==="install") {
     if (location.protocol === "file:") {
       ui.installHint = true;
@@ -1356,7 +1558,7 @@ try {
   render();
 } catch {
   try { localStorage.removeItem(STORAGE); } catch {}
-  state = { programId:"anvil", dayIndex:0, exercises: seedProgram("anvil", 0), history:[], liftProgress:{}, soundVolume:0.7, cuePack:"chime" };
+  state = { programId:"anvil", dayIndex:0, exercises: seedProgram("anvil", 0), history:[], liftProgress:{}, bodyWeightLog:[], soundVolume:0.7, cuePack:"chime" };
   try { render(); } catch {}
 }
 if (location.protocol.startsWith("http") && "serviceWorker" in navigator) {
