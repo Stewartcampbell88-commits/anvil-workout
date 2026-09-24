@@ -118,8 +118,30 @@ const SET_OPTS = [1,2,3,4,5];
 const REP_OPTS = [5,6,8,10,12,15,20,30,40];
 const WAVE_REPS = [6, 8, 10, 12];
 const PUSH_LEVELS = ["Kitchen bench","Kitchen table","Workout bench","Knees","Toes"];
+const HEAVE_STAGES = [
+  { name:"Dead hang", note:"Hang from the bar, shoulders packed. Timed holds — seconds, not reps.", seconds:true, startReps:20 },
+  { name:"Heaves (feet assisted)", note:"Hang from the bar. Feet on floor or a box for assist. Chin over bar, lower with control.", seconds:false, startReps:6 },
+  { name:"Negative heaves", note:"Jump or step to chin-over-bar, then lower in 3–5 seconds. No pull required.", seconds:false, startReps:6 },
+  { name:"Heaves", note:"Full pull-ups or chin-ups. Chin over bar, lower with control.", seconds:false, startReps:6 },
+];
 
+function isHeaveLadder(ex){
+  return ex?.id === "em-heaves" && !!ex.heaveLadder;
+}
+function heaveStage(ex){
+  const idx = Math.min(HEAVE_STAGES.length - 1, Math.max(0, ex?.levelIndex ?? 0));
+  return HEAVE_STAGES[idx];
+}
+function syncHeaveExercise(ex){
+  if (!isHeaveLadder(ex)) return ex;
+  const stage = heaveStage(ex);
+  let note = stage.note;
+  if (stage.seconds && !/seconds/i.test(note)) note = `${note} Timed — seconds, not reps.`;
+  return {...ex, name: stage.name, note};
+}
 function isPlankSeconds(ex){
+  // Heave ladder: only Dead hang is timed — stage notes for negatives mention "seconds" of lowering, not hold time
+  if (isHeaveLadder(ex)) return !!heaveStage(ex).seconds;
   return ex.id === "em-plank" || /seconds/i.test(ex.note||"");
 }
 function isWaveProgram(programId, ex){
@@ -163,7 +185,7 @@ function normalizeWaveTargets(){
   });
   for (const [id, p] of Object.entries(progress)) {
     if (!p || typeof p !== "object" || p.reps == null) continue;
-    if (id === "em-plank" || /seconds/i.test(p.note||"")) continue;
+    if (id === "em-plank" || id === "em-heaves" || /seconds/i.test(p.note||"")) continue;
     if (WAVE_REPS.includes(p.reps)) continue;
     progress[id] = {...p, reps: snapWaveRep(p.reps)};
     changed = true;
@@ -206,7 +228,7 @@ const PROGRAMS = [
     bb("tp-press","Shoulder press",3,10,60,"Mon / Wed / Fri · 3 × 10",{weight:0,cap:16,note:"Press overhead, don’t shrug. Lower to ear height with control."}),
     bw("tp-situp","Sit-ups",3,10,60,"Mon / Wed / Fri · 3 × 10",{nocap:true,note:"Feet planted. Curl up, don’t yank neck. Lower under control."}),
   ]}]},
-  {id:"ember", name:"EMBER", blurb:"Beginner 3× week. Wave: 3×6 → 3×8 → 3×10 → 3×12 (×3 clean each), then 3×6 +2.5kg.", days:[
+  {id:"ember", name:"EMBER", blurb:"Beginner 3× week. Wave 6→8→10→12 then +2.5kg. Day B heaves: hang → feet assist → negatives → full (auto-graduate).", days:[
     {label:"A", exercises:[
       bb("em-squat","Squats",3,6,75,"Day A",{weight:0,cap:12,note:"Sit to a chair if needed. Hold a plate when ready."}),
       bb("em-bench","Barbell bench",3,6,90,"Day A",{weight:20,cap:10,note:"Empty bar first if needed. Feet planted, lower to chest, press up."}),
@@ -216,7 +238,10 @@ const PROGRAMS = [
     {label:"B", exercises:[
       bb("em-rdl","Plate RDL",3,6,75,"Day B",{weight:2.5,cap:12,note:"2.5 kg plates in both hands. Soft knees, hips back, flat back."}),
       bb("em-press","Shoulder press",3,6,60,"Day B",{weight:2.5,cap:12,note:"2.5 kg plates. Press overhead, don’t shrug."}),
-      bw("em-heaves","Heaves (feet assisted)",3,6,90,"Day B",{nocap:true,note:"Hang from the bar. Keep feet on the floor or a box for assist. Chin over bar, lower with control."}),
+      bw("em-heaves", HEAVE_STAGES[0].name, 3, HEAVE_STAGES[0].startReps, 90, "Day B", {
+        nocap:true, heaveLadder:true, levels: HEAVE_STAGES.map(s=>s.name), levelIndex:0,
+        note: HEAVE_STAGES[0].note
+      }),
       bw("em-plank","Plank",3,20,45,"Day B",{cap:45,note:"Seconds, not reps. Knees down if needed."}),
     ]},
   ]},
@@ -314,6 +339,23 @@ function applyProgress(exs, progress, programId){
     let next = p
       ? {...ex, reps:p.reps, weight:p.weight, streak:p.streak, failStreak:p.failStreak, levelIndex:p.levelIndex ?? ex.levelIndex}
       : ex;
+    // EMBER heave ladder: restore seed flags + migrate levelIndex
+    if (next.id === "em-heaves" && (ex.heaveLadder || next.heaveLadder)) {
+      next = {
+        ...next,
+        heaveLadder: true,
+        levels: (ex.levels?.length ? ex.levels : next.levels?.length ? next.levels : HEAVE_STAGES.map(s=>s.name)),
+      };
+      if (p && p.levelIndex != null && Number.isFinite(Number(p.levelIndex))) {
+        next = {...next, levelIndex: Math.min(HEAVE_STAGES.length-1, Math.max(0, Number(p.levelIndex)))};
+      } else if (p) {
+        // Existing feet-assist progress without levelIndex → stage 1, keep reps/weight/streak
+        next = {...next, levelIndex: 1};
+      } else {
+        next = {...next, levelIndex: 0, reps: HEAVE_STAGES[0].startReps};
+      }
+      next = syncHeaveExercise(next);
+    }
     if ((waveProg || String(next.id||"").startsWith("em-")) && !isPlankSeconds(next) && next.reps != null && !WAVE_REPS.includes(next.reps)) {
       next = {...next, reps: snapWaveRep(next.reps)};
     }
@@ -329,7 +371,7 @@ function hydrate(raw){
     next.push({
       id:e.id, name:e.name, sets, rest:e.rest??90, weight:e.weight??0, reps:e.reps??8,
       bw:e.bw, nocap:e.nocap, cap:e.cap, block:e.block??"Session", bilateral:e.bilateral, note:e.note,
-      levels:e.levels, levelIndex: e.levels?.length ? (e.levelIndex??0) : e.levelIndex,
+      heaveLadder:e.heaveLadder, levels:e.levels, levelIndex: e.levels?.length ? (e.levelIndex??0) : e.levelIndex,
       streak:e.streak??0, failStreak:e.failStreak??0, skipped:e.skipped??false,
       setsLog: e.setsLog && e.setsLog.length===sets ? e.setsLog : blankSets(sets),
     });
@@ -342,7 +384,10 @@ function currentIndex(exs){
   return i < 0 ? exs.length-1 : i;
 }
 function fmtTime(sec){ const s=Math.max(0,Math.floor(sec)); return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`; }
-function targetLabel(ex){ return ex.bilateral ? `${ex.sets} × ${ex.reps} each` : `${ex.sets} × ${ex.reps}`; }
+function targetLabel(ex){
+  const unit = isPlankSeconds(ex) ? "s" : "";
+  return ex.bilateral ? `${ex.sets} × ${ex.reps}${unit} each` : `${ex.sets} × ${ex.reps}${unit}`;
+}
 function maxRep(ex){
   if (ex.nocap) return 50;
   if (ex.cap) return ex.cap;
@@ -593,17 +638,26 @@ function load(){
       const snapped = {};
       for (const [id, p] of Object.entries(liftProgress)) {
         if (!p || typeof p !== "object") { snapped[id] = p; continue; }
-        const plank = id === "em-plank";
-        const reps = (!plank && p.reps != null && !WAVE_REPS.includes(p.reps)) ? snapWaveRep(p.reps) : p.reps;
+        const skipSnap = id === "em-plank" || id === "em-heaves";
+        const reps = (!skipSnap && p.reps != null && !WAVE_REPS.includes(p.reps)) ? snapWaveRep(p.reps) : p.reps;
         snapped[id] = reps === p.reps ? p : {...p, reps};
       }
       liftProgress = snapped;
     }
+    const seeded = seedProgram(program.id, dayIndex);
+    const seedById = Object.fromEntries(seeded.map(e => [e.id, e]));
+    let baseExs = hydrate(raw.exercises) || seeded;
+    // Preserve heaveLadder / levels from seed when rehydrating saved sessions
+    baseExs = baseExs.map(ex => {
+      const s = seedById[ex.id];
+      if (!s?.heaveLadder) return ex;
+      return {...ex, heaveLadder:true, levels: s.levels};
+    });
     state = {
       programId: program.id,
       dayIndex,
       liftProgress,
-      exercises: applyProgress(hydrate(raw.exercises) || seedProgram(program.id, dayIndex), liftProgress, program.id),
+      exercises: applyProgress(baseExs, liftProgress, program.id),
       history: raw.history || [],
       soundVolume: clampVolume(raw.soundVolume ?? 0.7),
       cuePack: normalizeCuePack(raw.cuePack),
@@ -713,7 +767,13 @@ function bumpLevel(ei, d){
   state.exercises = state.exercises.map((ex,i) => {
     if (i!==ei || !ex.levels?.length) return ex;
     const next = Math.min(ex.levels.length-1, Math.max(0, (ex.levelIndex??0)+d));
-    return {...ex, levelIndex: next};
+    if (next === (ex.levelIndex??0)) return ex;
+    let updated = {...ex, levelIndex: next};
+    if (isHeaveLadder(updated)) {
+      const stage = heaveStage(updated);
+      updated = syncHeaveExercise({...updated, reps: stage.startReps, weight: 0, streak: 0, failStreak: 0});
+    }
+    return updated;
   });
   state.liftProgress = captureProgress(state.exercises, state.liftProgress);
   save(); render();
@@ -793,24 +853,55 @@ function logSession(){
     }
     if (isWaveProgram(state.programId, ex)) {
       // Ember / Anvil shared ladder: 6 → 8 → 10 → 12, then 6 +2.5kg
+      // EMBER em-heaves: 4-step heave ladder with auto-graduate
       let streak = (ex.streak||0) + 1;
       let {reps, weight} = ex;
-      if (streak >= 3) {
-        if (isPlankSeconds(ex)) {
+      let levelIndex = ex.levelIndex ?? 0;
+      if (streak < 3) {
+        const sec = isPlankSeconds(ex);
+        notes.push(`${ex.name}: clean streak ${streak}/3 at 3×${reps}${sec?"s":""}`);
+      } else if (isHeaveLadder(ex)) {
+        const idx = levelIndex;
+        const stage = HEAVE_STAGES[Math.min(idx, HEAVE_STAGES.length-1)];
+        const last = idx >= HEAVE_STAGES.length - 1;
+        if (stage.seconds) {
           if (reps < 30) {
             reps = 30; streak = 0;
             notes.push(`${ex.name}: wave → 3×30s`);
+          } else if (!last) {
+            levelIndex = idx + 1; reps = 6; weight = 0; streak = 0;
+            notes.push(`${ex.name}: graduated → ${HEAVE_STAGES[levelIndex].name}`);
           } else {
             reps = 20; streak = 0;
-            notes.push(`${ex.name}: wave → 3×20s (no kg)`);
+            notes.push(`${ex.name}: wave → 3×20s`);
           }
         } else {
-          const step = nextWaveStep(reps, weight);
-          reps = step.reps; weight = step.weight; streak = 0;
-          notes.push(`${ex.name}: ${step.note}`);
+          const atGraduatePoint = WAVE_REPS.indexOf(reps) === WAVE_REPS.length - 1;
+          if (atGraduatePoint && !last) {
+            levelIndex = idx + 1; reps = 6; weight = 0; streak = 0;
+            notes.push(`${ex.name}: graduated → ${HEAVE_STAGES[levelIndex].name}`);
+          } else {
+            const step = nextWaveStep(reps, weight);
+            reps = step.reps; weight = step.weight; streak = 0;
+            notes.push(`${ex.name}: ${step.note}`);
+          }
         }
-      } else notes.push(`${ex.name}: clean streak ${streak}/3 at 3×${reps}`);
-      return {...ex, streak, failStreak:0, reps, weight, setsLog: blankSets(ex.sets)};
+      } else if (isPlankSeconds(ex)) {
+        if (reps < 30) {
+          reps = 30; streak = 0;
+          notes.push(`${ex.name}: wave → 3×30s`);
+        } else {
+          reps = 20; streak = 0;
+          notes.push(`${ex.name}: wave → 3×20s (no kg)`);
+        }
+      } else {
+        const step = nextWaveStep(reps, weight);
+        reps = step.reps; weight = step.weight; streak = 0;
+        notes.push(`${ex.name}: ${step.note}`);
+      }
+      let out = {...ex, streak, failStreak:0, reps, weight, levelIndex, setsLog: blankSets(ex.sets)};
+      if (isHeaveLadder(out)) out = syncHeaveExercise(out);
+      return out;
     }
     const minLogged = Math.min(...setsLog.map(s => s.reps ?? ex.reps));
     let {reps, weight} = ex;
@@ -1114,7 +1205,7 @@ function render(){
       <button class="primary" data-act="log">Log session</button>
       <button data-act="reset">${I.reset} Reset</button>
     </div>
-    <p class="foot">Tap the big number to complete that set (tap again clears). − / + dial that set’s reps — going below the target marks it failed (red). Leave a lift blank or skip — it won’t count. Ember / Anvil: 3 clean at a rung climbs 6→8→10→12, then 3×6 +2.5kg (plank waves 20→30→20s, no kg). Other programs: 3 clean → +2 reps (or +2.5 kg at cap). 3 short sessions → reset week (drop kg first if loaded).</p>
+    <p class="foot">Tap the big number to complete that set (tap again clears). − / + dial that set’s reps — going below the target marks it failed (red). Leave a lift blank or skip — it won’t count. Ember / Anvil: 3 clean at a rung climbs 6→8→10→12, then 3×6 +2.5kg (plank waves 20→30→20s, no kg). Ember heaves ladder: hang → feet assist → negatives → full (auto-graduate after wave). Other programs: 3 clean → +2 reps (or +2.5 kg at cap). 3 short sessions → reset week (drop kg first if loaded).</p>
     ${settings}
   `;
 }
