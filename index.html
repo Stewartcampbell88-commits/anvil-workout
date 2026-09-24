@@ -52,12 +52,17 @@
     .cue { height:1.5rem; font-size:1.125rem; font-weight:700; letter-spacing:0.04em; margin:0; }
     .sets { display:flex; gap:0.5rem; margin-top:0.75rem; }
     .sets.tight { gap:0.25rem; }
-    .set { flex:1; min-height:4rem; border-radius:0.75rem; background:var(--border); display:flex; flex-direction:column; align-items:center; justify-content:center; padding:0.375rem 0.125rem; touch-action:manipulation; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+    .set { flex:1; min-height:4rem; border-radius:0.75rem; background:var(--border); display:flex; flex-direction:column; align-items:stretch; justify-content:stretch; padding:0; overflow:hidden; touch-action:manipulation; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
     .set.ok { background:var(--done); color:var(--bg); }
     .set.miss { background:var(--miss); color:var(--bg); }
+    .set-main { flex:1; width:100%; min-height:0; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:0.375rem 0.125rem 0.125rem; background:transparent; touch-action:manipulation; }
     .set .n { font-weight:700; font-size:0.875rem; }
     .set .r { font-weight:600; font-variant-numeric:tabular-nums; color:var(--muted); font-size:0.75rem; }
     .set.ok .r, .set.miss .r { font-size:1.125rem; line-height:1; color:inherit; }
+    .set-adj { display:flex; gap:0.125rem; padding:0 0.125rem 0.125rem; flex-shrink:0; }
+    .set-pm { flex:1; min-height:1.75rem; height:1.75rem; border-radius:0.375rem; font-size:0.875rem; font-weight:700; line-height:1; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.08); color:var(--fg); }
+    .set.ok .set-pm, .set.miss .set-pm { background:rgba(0,0,0,0.28); color:inherit; }
+    .sets.tight .set-pm { min-height:1.75rem; font-size:0.8125rem; }
     .skip { min-height:2.75rem; padding:0 0.375rem; font-size:0.75rem; font-weight:500; letter-spacing:0.04em; color:var(--muted); opacity:0.7; }
     .skip.on { color:var(--primary); opacity:1; }
     .split { display:flex; gap:0.5rem; margin-top:0.75rem; }
@@ -812,6 +817,29 @@ function adjustRest(d){
   startRest(next);
 }
 
+function bumpSetRep(ei, si, delta){
+  unlockAudio();
+  const ex0 = state.exercises[ei];
+  if (!ex0 || ex0.skipped) return;
+  const before = ex0.setsLog[si];
+  const starting = !before.ok && !before.miss;
+  state.exercises = state.exercises.map((ex,i) => {
+    if (i!==ei) return ex;
+    const target = ex.reps;
+    const max = maxRep(ex);
+    const log = ex.setsLog.map((s,j) => {
+      if (j!==si) return s;
+      const logged = s.ok || s.miss;
+      let reps = logged ? (s.reps ?? target) : target;
+      reps = Math.max(0, Math.min(max, reps + delta));
+      const ok = reps >= target;
+      return {ok, miss:!ok, reps};
+    });
+    return {...ex, skipped:false, setsLog:log};
+  });
+  save(); render();
+  if (starting) startRest(state.exercises[ei].rest);
+}
 function onMark(ei, si){
   unlockAudio();
   const before = state.exercises[ei].setsLog[si];
@@ -899,10 +927,16 @@ function render(){
       const logged = log.ok || log.miss;
       const shown = logged ? (log.reps ?? ex.reps) : ex.reps;
       const cls = log.ok ? "ok" : log.miss ? "miss" : "";
-      return `<button class="set ${cls}" data-act="set" data-i="${ei}" data-s="${si}">
-        <span class="n">${tight?`S${si+1}`:`Set ${si+1}`}</span>
-        <span class="r">${ex.bilateral?`${shown} ea`:shown}</span>
-      </button>`;
+      return `<div class="set ${cls}">
+        <button type="button" class="set-main" data-act="set" data-i="${ei}" data-s="${si}">
+          <span class="n">${tight?`S${si+1}`:`Set ${si+1}`}</span>
+          <span class="r">${ex.bilateral?`${shown} ea`:shown}</span>
+        </button>
+        <div class="set-adj">
+          <button type="button" class="set-pm" data-act="set-rep" data-i="${ei}" data-s="${si}" data-d="-1" aria-label="Fewer reps">−</button>
+          <button type="button" class="set-pm" data-act="set-rep" data-i="${ei}" data-s="${si}" data-d="1" aria-label="More reps">+</button>
+        </div>
+      </div>`;
     }).join("")}</div>`;
     return `${showTag?`<p class="block">${esc(ex.block)}</p>`:""}
       <article class="card${isActive?" active":""}${ex.skipped?" skipped":""}" id="ex-${esc(ex.id)}">
@@ -1032,7 +1066,7 @@ function render(){
       <button class="primary" data-act="log">Log session</button>
       <button data-act="reset">${I.reset} Reset</button>
     </div>
-    <p class="foot">Tap a set to log the target, then tap again to add reps up to the cap (or soft max). Tap at max clears the set. Long-press a set for a miss (below target); tap a miss to drop reps, then clear. Leave a lift blank or skip — it won’t count. All sets clean above target → next session uses that min. Exactly at target: 3 clean → +2 reps (or +2.5 kg at cap / on 5×5-style lifts; bodyweight lifts use the same kg steppers for added load). 3 short sessions → reset week (drop kg first if loaded).</p>
+    <p class="foot">Tap a set to log the target, then tap again to add reps up to the cap (or soft max). Tap at max clears the set. Use − / + under a set to change that set’s reps (also logs an unlogged set). Long-press a set for a miss (below target); tap a miss to drop reps, then clear. Leave a lift blank or skip — it won’t count. All sets clean above target → next session uses that min. Exactly at target: 3 clean → +2 reps (or +2.5 kg at cap / on 5×5-style lifts; bodyweight lifts use the same kg steppers for added load). 3 short sessions → reset week (drop kg first if loaded).</p>
     ${settings}
   `;
 }
@@ -1045,6 +1079,7 @@ function clearSetPress(){
   if (setPressTimer) { clearTimeout(setPressTimer); setPressTimer = null; }
 }
 document.getElementById("app").addEventListener("pointerdown", (e) => {
+  if (e.target.closest("[data-act=set-rep]")) return;
   const btn = e.target.closest("[data-act=set]");
   if (!btn || (e.button != null && e.button !== 0)) return;
   clearSetPress();
@@ -1078,6 +1113,10 @@ document.getElementById("app").addEventListener("click", (e) => {
   if (act==="set") {
     if (setPressFired) { setPressFired = false; return; }
     onMark(+btn.dataset.i, +btn.dataset.s);
+  }
+  else if (act==="set-rep") {
+    e.stopPropagation();
+    bumpSetRep(+btn.dataset.i, +btn.dataset.s, +btn.dataset.d);
   }
   else if (act==="weight") bumpWeight(+btn.dataset.i, +btn.dataset.d);
   else if (act==="level") bumpLevel(+btn.dataset.i, +btn.dataset.d);
