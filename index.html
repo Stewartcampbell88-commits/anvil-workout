@@ -52,16 +52,17 @@
     .cue { height:1.5rem; font-size:1.125rem; font-weight:700; letter-spacing:0.04em; margin:0; }
     .sets { display:flex; gap:0.5rem; margin-top:0.75rem; }
     .sets.tight { gap:0.25rem; }
-    .set { flex:1; min-height:4rem; border-radius:0.75rem; background:var(--border); display:flex; flex-direction:column; align-items:center; justify-content:center; padding:0.375rem 0.125rem; touch-action:manipulation; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
-    .set.ok { background:var(--done); color:var(--bg); }
-    .set.miss { background:var(--miss); color:var(--bg); }
-    .set .n { font-weight:700; font-size:0.875rem; }
-    .set .r { font-weight:600; font-variant-numeric:tabular-nums; color:var(--muted); font-size:0.75rem; }
-    .set.ok .r, .set.miss .r { font-size:1.125rem; line-height:1; color:inherit; }
-    .reps-wrap { display:flex; flex-direction:column; align-items:center; gap:0.25rem; margin-left:0.25rem; }
-    .reps-box { min-width:3.5rem; min-height:2.75rem; border-radius:0.75rem; background:var(--border); display:flex; align-items:center; justify-content:center; font-size:1.125rem; font-weight:600; font-variant-numeric:tabular-nums; padding:0 0.5rem; }
-    .reps-adj { display:flex; gap:0.25rem; }
-    .set-pm { min-width:2rem; min-height:1.75rem; height:1.75rem; padding:0 0.5rem; border-radius:0.375rem; font-size:0.875rem; font-weight:700; line-height:1; display:flex; align-items:center; justify-content:center; background:var(--border); color:var(--fg); }
+    .set { flex:1; display:flex; flex-direction:column; gap:0.25rem; background:transparent; min-height:auto; padding:0; overflow:visible; }
+    .set-hit { width:100%; min-height:3.25rem; border-radius:0.75rem; background:var(--border); font-size:1.25rem; font-weight:700; font-variant-numeric:tabular-nums; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:0.35rem 0.2rem; line-height:1.1; touch-action:manipulation; -webkit-user-select:none; user-select:none; }
+    .set-label { display:block; font-size:0.6rem; font-weight:700; letter-spacing:0.06em; opacity:0.65; line-height:1; margin-bottom:0.1rem; }
+    .set.ok .set-hit { background:var(--done); color:var(--bg); }
+    .set.miss .set-hit { background:var(--miss); color:var(--bg); }
+    .set-tools { display:flex; gap:0.25rem; }
+    .set-tool { flex:1; min-height:2rem; border-radius:0.5rem; font-size:0.7rem; font-weight:700; background:var(--border); display:flex; align-items:center; justify-content:center; padding:0 0.15rem; touch-action:manipulation; }
+    .set-fail { font-size:0.65rem; letter-spacing:0.02em; }
+    .sets.tight .set-hit { min-height:2.75rem; font-size:1.05rem; border-radius:0.625rem; }
+    .sets.tight .set-tool { min-height:1.75rem; font-size:0.65rem; border-radius:0.4rem; }
+    .sets.tight .set-fail { font-size:0.55rem; }
     .skip { min-height:2.75rem; padding:0 0.375rem; font-size:0.75rem; font-weight:500; letter-spacing:0.04em; color:var(--muted); opacity:0.7; }
     .skip.on { color:var(--primary); opacity:1; }
     .split { display:flex; gap:0.5rem; margin-top:0.75rem; }
@@ -622,12 +623,10 @@ function importBackup(){
 function markSet(ei, si){
   state.exercises = state.exercises.map((ex,i) => {
     if (i!==ei) return ex;
-    const target = ex.reps;
     const log = ex.setsLog.map((s,j) => {
       if (j!==si) return s;
       const logged = s.ok || s.miss;
-      if (!logged) return {ok:true, miss:false, reps:target};
-      // already ok or miss → clear (never bump reps / never edit range)
+      if (!logged) return {ok:true, miss:false, reps: s.reps ?? ex.reps};
       return {ok:false, miss:false};
     });
     return {...ex, skipped:false, setsLog:log};
@@ -637,21 +636,11 @@ function markSet(ei, si){
 function markSetMiss(ei, si){
   state.exercises = state.exercises.map((ex,i) => {
     if (i!==ei) return ex;
-    const target = ex.reps;
     const log = ex.setsLog.map((s,j) => {
       if (j!==si) return s;
-      const logged = s.ok || s.miss;
-      if (!logged) {
-        const missReps = Math.max(0, target - 1);
-        return {ok:false, miss:true, reps:missReps};
-      }
-      if (s.ok) {
-        const missReps = Math.min(s.reps ?? target, Math.max(0, target - 1));
-        if (missReps < 1 && target <= 1) return {ok:false, miss:true, reps:0};
-        return {ok:false, miss:true, reps:Math.max(0, missReps)};
-      }
-      // already miss → clear
-      return {ok:false, miss:false};
+      if (s.miss) return {ok:false, miss:false};
+      const reps = s.reps != null ? s.reps : Math.max(0, ex.reps - 1);
+      return {ok:false, miss:true, reps};
     });
     return {...ex, skipped:false, setsLog:log};
   });
@@ -836,16 +825,23 @@ function adjustRest(d){
   startRest(next);
 }
 
-function bumpTargetReps(ei, delta){
+function bumpSetReps(ei, si, delta){
   const ex0 = state.exercises[ei];
   if (!ex0 || ex0.skipped) return;
   state.exercises = state.exercises.map((ex,i) => {
     if (i!==ei) return ex;
     const max = maxRep(ex) || 50;
-    const reps = Math.max(1, Math.min(max, (ex.reps || 1) + delta));
-    return {...ex, reps};
+    const log = ex.setsLog.map((s,j) => {
+      if (j!==si) return s;
+      const cur = s.reps ?? ex.reps;
+      const next = Math.max(0, Math.min(max, cur + delta));
+      let ok = !!s.ok, miss = !!s.miss;
+      if (ok && next < ex.reps) { ok = false; miss = true; }
+      else if (miss && next >= ex.reps) { ok = true; miss = false; }
+      return {...s, ok, miss, reps: next};
+    });
+    return {...ex, setsLog:log};
   });
-  state.liftProgress = captureProgress(state.exercises, state.liftProgress);
   save(); render();
 }
 function onMark(ei, si){
@@ -924,29 +920,27 @@ function render(){
            <span class="kg">${ex.weight}</span>
            <button class="icon-btn" data-act="weight" data-i="${ei}" data-d="2.5" aria-label="Increase weight">${I.plus}</button>
            <span class="muted" style="font-size:.875rem">kg</span>`;
-    const repsLabel = ex.bilateral ? `${ex.reps} ea` : String(ex.reps);
-    const repsCtrl = ex.skipped ? "" : `<div class="reps-wrap">
-           <div class="reps-box" aria-label="Target reps">${repsLabel}</div>
-           <div class="reps-adj">
-             <button type="button" class="set-pm" data-act="set-rep" data-i="${ei}" data-d="-1" aria-label="Decrease target reps">−</button>
-             <button type="button" class="set-pm" data-act="set-rep" data-i="${ei}" data-d="1" aria-label="Increase target reps">+</button>
-           </div>
-         </div>`;
     const load = ex.levels?.length
       ? `<button class="icon-btn" data-act="level" data-i="${ei}" data-d="-1" aria-label="Easier height">${I.minus}</button>
          <span class="level">${esc(level)}</span>
          <button class="icon-btn" data-act="level" data-i="${ei}" data-d="1" aria-label="Harder height">${I.plus}</button>
          <span style="flex-basis:100%;height:0" aria-hidden="true"></span>
-         ${weightCtrl}${repsCtrl}`
-      : `${weightCtrl}${repsCtrl}`;
+         ${weightCtrl}`
+      : `${weightCtrl}`;
     const sets = ex.skipped ? "" : `<div class="sets${tight?" tight":""}">${ex.setsLog.map((log,si) => {
-      const logged = log.ok || log.miss;
-      const shown = logged ? (log.reps ?? ex.reps) : ex.reps;
+      const shown = log.reps ?? ex.reps;
       const cls = log.ok ? "ok" : log.miss ? "miss" : "";
-      return `<button type="button" class="set ${cls}" data-act="set" data-i="${ei}" data-s="${si}">
-        <span class="n">${tight?`S${si+1}`:`Set ${si+1}`}</span>
-        <span class="r">${ex.bilateral?`${shown} ea`:shown}</span>
-      </button>`;
+      const hit = ex.bilateral ? `${shown} ea` : String(shown);
+      return `<div class="set ${cls}">
+        <button type="button" class="set-hit" data-act="set" data-i="${ei}" data-s="${si}" aria-label="Set ${si+1}">
+          <span class="set-label">${si+1}</span>${hit}
+        </button>
+        <div class="set-tools">
+          <button type="button" class="set-tool" data-act="set-rep" data-i="${ei}" data-s="${si}" data-d="-1" aria-label="Fewer reps">−</button>
+          <button type="button" class="set-tool set-fail" data-act="set-fail" data-i="${ei}" data-s="${si}">fail</button>
+          <button type="button" class="set-tool" data-act="set-rep" data-i="${ei}" data-s="${si}" data-d="1" aria-label="More reps">+</button>
+        </div>
+      </div>`;
     }).join("")}</div>`;
     return `${showTag?`<p class="block">${esc(ex.block)}</p>`:""}
       <article class="card${isActive?" active":""}${ex.skipped?" skipped":""}" id="ex-${esc(ex.id)}">
@@ -1076,38 +1070,12 @@ function render(){
       <button class="primary" data-act="log">Log session</button>
       <button data-act="reset">${I.reset} Reset</button>
     </div>
-    <p class="foot">− / + under the reps box change the target range. Tap a set to log that target (tap again clears). Long-press a set for a miss. Leave a lift blank or skip — it won’t count. All sets clean above target → next session uses that min. Exactly at target: 3 clean → +2 reps (or +2.5 kg at cap / on 5×5-style lifts; bodyweight lifts use the same kg steppers for added load). 3 short sessions → reset week (drop kg first if loaded).</p>
+    <p class="foot">Tap the big number to complete that set (tap again clears). − / + under a set change that set’s reps. Fail marks a miss — then dial the reps to what you did. Leave a lift blank or skip — it won’t count. All sets clean above target → next session uses that min. Exactly at target: 3 clean → +2 reps (or +2.5 kg at cap / on 5×5-style lifts; bodyweight lifts use the same kg steppers for added load). 3 short sessions → reset week (drop kg first if loaded).</p>
     ${settings}
   `;
 }
 
 document.addEventListener("pointerdown", unlockAudio, {once:true});
-let setPressTimer = null;
-let setPressFired = false;
-const SET_LONG_MS = 400;
-function clearSetPress(){
-  if (setPressTimer) { clearTimeout(setPressTimer); setPressTimer = null; }
-}
-document.getElementById("app").addEventListener("pointerdown", (e) => {
-  if (e.target.closest("[data-act=set-rep]")) return;
-  const btn = e.target.closest("[data-act=set]");
-  if (!btn || (e.button != null && e.button !== 0)) return;
-  clearSetPress();
-  setPressFired = false;
-  const ei = +btn.dataset.i, si = +btn.dataset.s;
-  try { btn.setPointerCapture(e.pointerId); } catch (_) {}
-  setPressTimer = setTimeout(() => {
-    setPressTimer = null;
-    setPressFired = true;
-    onMarkMiss(ei, si);
-  }, SET_LONG_MS);
-});
-document.getElementById("app").addEventListener("pointerup", clearSetPress);
-document.getElementById("app").addEventListener("pointercancel", clearSetPress);
-document.getElementById("app").addEventListener("lostpointercapture", clearSetPress);
-document.getElementById("app").addEventListener("contextmenu", (e) => {
-  if (e.target.closest("[data-act=set]")) e.preventDefault();
-});
 document.getElementById("app").addEventListener("input", (e) => {
   const el = e.target.closest("[data-act=vol]");
   if (!el) return;
@@ -1121,12 +1089,15 @@ document.getElementById("app").addEventListener("click", (e) => {
   if (!btn) return;
   const act = btn.dataset.act;
   if (act==="set") {
-    if (setPressFired) { setPressFired = false; return; }
     onMark(+btn.dataset.i, +btn.dataset.s);
+  }
+  else if (act==="set-fail") {
+    e.stopPropagation();
+    onMarkMiss(+btn.dataset.i, +btn.dataset.s);
   }
   else if (act==="set-rep") {
     e.stopPropagation();
-    bumpTargetReps(+btn.dataset.i, +btn.dataset.d);
+    bumpSetReps(+btn.dataset.i, +btn.dataset.s, +btn.dataset.d);
   }
   else if (act==="weight") bumpWeight(+btn.dataset.i, +btn.dataset.d);
   else if (act==="level") bumpLevel(+btn.dataset.i, +btn.dataset.d);
