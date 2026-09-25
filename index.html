@@ -54,7 +54,7 @@
     .sets.tight { gap:0.25rem; }
     .set { flex:1; display:flex; flex-direction:column; gap:0.25rem; background:transparent; min-height:auto; padding:0; overflow:visible; }
     .set-hit { width:100%; min-height:3.25rem; border-radius:0.75rem; background:var(--border); font-size:1.25rem; font-weight:700; font-variant-numeric:tabular-nums; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:0.35rem 0.2rem; line-height:1.1; touch-action:manipulation; -webkit-user-select:none; user-select:none; }
-    .set-label { display:block; font-size:0.6rem; font-weight:700; letter-spacing:0.06em; opacity:0.65; line-height:1; margin-bottom:0.1rem; }
+    .set-label { display:block; font-size:0.55rem; font-weight:700; letter-spacing:0.04em; opacity:0.65; line-height:1; margin-bottom:0.1rem; text-transform:uppercase; }
     .set.ok .set-hit { background:var(--done); color:var(--bg); }
     .set.miss .set-hit { background:var(--miss); color:var(--bg); }
     .set-tools { display:flex; gap:0.25rem; }
@@ -122,7 +122,7 @@
 <input type="file" id="import-file" accept="application/json,.json" class="hide" />
 <script>
 const STORAGE = "anvil_app_v3";
-const APP_VERSION = "anvil-v25";
+const APP_VERSION = "anvil-v26";
 const SET_OPTS = [1,2,3,4,5];
 const REP_OPTS = [5,6,8,10,12,15,20,30,40];
 const WAVE_REPS = [6, 8, 10, 12];
@@ -169,6 +169,13 @@ function isPlankSeconds(ex){
   // Heave ladder: only Dead hang is timed — stage notes for negatives mention "seconds" of lowering, not hold time
   if (isHeaveLadder(ex)) return !!heaveStage(ex).seconds;
   return ex.id === "em-plank" || ex.id === "tp-plank" || /seconds/i.test(ex.note||"");
+}
+const AMRAP_BONUS = 2;
+function usesAmrap(ex){
+  if (!ex || (ex.sets ?? 0) < 2) return false;
+  if (isPlankSeconds(ex)) return false;
+  if (isHeaveLadder(ex) && (ex.levelIndex ?? 0) < HEAVE_STAGES.length - 1) return false;
+  return true;
 }
 function isWaveProgram(programId, ex){
   const pid = programId || (typeof state !== "undefined" && state?.programId);
@@ -910,7 +917,12 @@ function logSession(){
       return {ok:false, miss:true, reps:r};
     });
     const clean = all && setsLog.every(s => s.ok && !s.miss);
-    lifts.push({ id: ex.id, name: ex.name, weight: workedWeight, reps: workedReps, clean });
+    const lastSet = setsLog[setsLog.length - 1];
+    const lastReps = lastSet?.reps ?? ex.reps;
+    const amrapHit = usesAmrap(ex) && clean && lastReps >= ex.reps + AMRAP_BONUS;
+    const liftEntry = { id: ex.id, name: ex.name, weight: workedWeight, reps: workedReps, clean };
+    if (usesAmrap(ex)) liftEntry.amrapReps = lastReps;
+    lifts.push(liftEntry);
     if (!all) { notes.push(`${ex.name}: incomplete`); return {...ex, setsLog: blankSets(ex.sets)}; }
     if (!clean) {
       let failStreak = (ex.failStreak||0)+1;
@@ -936,10 +948,31 @@ function logSession(){
     if (isWaveProgram(state.programId, ex)) {
       // Ember / Anvil / Titan shared ladder: 6 → 8 → 10 → 12, then 6 +2.5kg
       // Heave ladder + TITAN plate-bench → barbell graduate
+      // AMRAP last-set (+2 over target) bumps load immediately — skips wave climb this session
       let streak = (ex.streak||0) + 1;
       let {reps, weight} = ex;
       let levelIndex = ex.levelIndex ?? 0;
-      if (streak < 3) {
+      if (amrapHit) {
+        streak = 0;
+        if (isBenchLadder(ex)) {
+          const idx = levelIndex;
+          const stage = BENCH_STAGES[Math.min(idx, BENCH_STAGES.length-1)];
+          const last = idx >= BENCH_STAGES.length - 1;
+          if (!last && !stage.useBar && reps === 12 && weight >= 10) {
+            levelIndex = idx + 1;
+            const nextStage = BENCH_STAGES[levelIndex];
+            reps = nextStage.startReps; weight = nextStage.startWeight;
+            notes.push(`${ex.name}: AMRAP ${lastReps} → graduated → ${nextStage.name}`);
+          } else {
+            weight = +(weight + 2.5).toFixed(1);
+            notes.push(`${ex.name}: AMRAP ${lastReps} → +2.5kg · ${weight}kg × ${reps}`);
+          }
+        } else {
+          // Full heaves (final stage) and normal wave lifts: +2.5kg, keep reps
+          weight = +(weight + 2.5).toFixed(1);
+          notes.push(`${ex.name}: AMRAP ${lastReps} → +2.5kg · ${weight}kg × ${reps}`);
+        }
+      } else if (streak < 3) {
         const sec = isPlankSeconds(ex);
         notes.push(`${ex.name}: clean streak ${streak}/3 at 3×${reps}${sec?"s":""}`);
       } else if (isHeaveLadder(ex)) {
@@ -1002,9 +1035,19 @@ function logSession(){
       if (isBenchLadder(out)) out = syncBenchExercise(out);
       return out;
     }
-    const minLogged = Math.min(...setsLog.map(s => s.reps ?? ex.reps));
     let {reps, weight} = ex;
     let levelIndex = ex.levelIndex ?? 0;
+    if (amrapHit) {
+      if (weight > 0 || !ex.bw) {
+        weight = +(weight + 2.5).toFixed(1);
+        notes.push(`${ex.name}: AMRAP ${lastReps} → +2.5kg · ${weight}kg × ${reps}`);
+      } else {
+        reps = Math.max(ex.reps + 2, lastReps);
+        notes.push(`${ex.name}: AMRAP ${lastReps} → reps ${reps}`);
+      }
+      return {...ex, streak:0, failStreak:0, reps, weight, levelIndex, setsLog: blankSets(ex.sets)};
+    }
+    const minLogged = Math.min(...setsLog.map(s => s.reps ?? ex.reps));
     // Carry-forward: all sets clean above target → raise range immediately
     if (minLogged > ex.reps) {
       reps = minLogged;
@@ -1327,13 +1370,17 @@ function render(){
          <span style="flex-basis:100%;height:0" aria-hidden="true"></span>
          ${weightCtrl}`
       : `${weightCtrl}`;
+    const amrap = usesAmrap(ex);
     const sets = ex.skipped ? "" : `<div class="sets${tight?" tight":""}">${ex.setsLog.map((log,si) => {
       const shown = log.reps ?? ex.reps;
       const cls = log.ok ? "ok" : log.miss ? "miss" : "";
       const hit = ex.bilateral ? `${shown} ea` : String(shown);
+      const isLast = si === ex.setsLog.length - 1;
+      const setLab = (isLast && amrap) ? "AMRAP" : String(si+1);
+      const setAria = (isLast && amrap) ? "AMRAP last set" : ("Set " + (si+1));
       return `<div class="set ${cls}">
-        <button type="button" class="set-hit" data-act="set" data-i="${ei}" data-s="${si}" aria-label="Set ${si+1}">
-          <span class="set-label">${si+1}</span>${hit}
+        <button type="button" class="set-hit" data-act="set" data-i="${ei}" data-s="${si}" aria-label="${setAria}">
+          <span class="set-label">${setLab}</span>${hit}
         </button>
         <div class="set-tools">
           <button type="button" class="set-tool" data-act="set-rep" data-i="${ei}" data-s="${si}" data-d="-1" aria-label="Fewer reps">−</button>
@@ -1349,7 +1396,7 @@ function render(){
             ${ex.note?`<p class="note">${esc(ex.note)}</p>`:""}
             ${ex.skipped?`<p class="note">Skipped — won’t count</p>`:""}
           </div>
-          <p class="meta">${esc(targetLabel(ex))}<br>${ex.streak}/3 clean · ${ex.failStreak}/3 no-rep</p>
+          <p class="meta">${esc(targetLabel(ex))}<br>${ex.streak}/3 clean · ${ex.failStreak}/3 no-rep${amrap?`<br><span style="opacity:.7;font-size:.65rem">Last set AMRAP · +2 → next kg</span>`:""}</p>
         </div>
         <div class="weight">${load}</div>
         ${isActive?`<div class="rest-box"><p class="cue" data-cue>${loggedCue}</p><p class="big ${tClass}" data-timer style="font-size:3rem">${remainText}</p>
@@ -1537,7 +1584,7 @@ function render(){
       <button class="primary" data-act="log">Log session</button>
       <button data-act="reset">${I.reset} Reset</button>
     </div>
-    <p class="foot">Tap the big number to complete that set (tap again clears). − / + dial that set’s reps — going below the target marks it failed (red). Leave a lift blank or skip — it won’t count. Ember / Anvil / Titan: 3 clean at a rung climbs 6→8→10→12, then 3×6 +2.5kg (plank waves 20→30→20s, no kg). Heaves ladder: hang → feet assist → negatives → full (auto-graduate after wave). Titan plate bench: 3 clean at 3×12 @ ≥10kg → barbell 3×6 @ 20kg. Other programs: 3 clean → +2 reps (or +2.5 kg at cap). 3 short sessions → reset week (drop kg first if loaded).</p>
+    <p class="foot">Tap the big number to complete that set (tap again clears). − / + dial that set’s reps — going below the target marks it failed (red). Leave a lift blank or skip — it won’t count. Last set AMRAP on most lifts — hit target+2 (or more) to add 2.5kg next time. Timed holds and early heave stages skip AMRAP. Ember / Anvil / Titan: 3 clean at a rung climbs 6→8→10→12, then 3×6 +2.5kg (plank waves 20→30→20s, no kg) — AMRAP load bump skips the wave climb that session. Heaves ladder: hang → feet assist → negatives → full (auto-graduate after wave). Titan plate bench: 3 clean at 3×12 @ ≥10kg → barbell 3×6 @ 20kg (AMRAP at 12 @ ≥10kg also graduates). Other programs: 3 clean → +2 reps (or +2.5 kg at cap). 3 short sessions → reset week (drop kg first if loaded).</p>
     ${bodyweight}
     ${settings}
   `;
