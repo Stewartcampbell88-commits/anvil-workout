@@ -122,7 +122,7 @@
 <input type="file" id="import-file" accept="application/json,.json" class="hide" />
 <script>
 const STORAGE = "anvil_app_v3";
-const APP_VERSION = "anvil-v27";
+const APP_VERSION = "anvil-v28";
 const SET_OPTS = [1,2,3,4,5];
 const REP_OPTS = [5,6,8,10,12,15,20,30,40];
 const WAVE_REPS = [6, 8, 10, 12];
@@ -184,16 +184,23 @@ function isWaveProgram(programId, ex){
 
 /** Upwards-only strength chain: a lift may not kg-progress past the next lift UP the chain. */
 const BALANCE_CHAINS = {
-  anvil: { row: "bench" },
-  ember: { "em-press": "em-row", "em-row": "em-bench" },
-  titan: { "tp-press": "tp-row", "tp-row": "tp-bench" },
+  anvil: { row: "bench", bench: "squat", squat: "rdl" },
+  ember: { "em-press": "em-row", "em-row": "em-bench", "em-bench": "em-squat", "em-squat": "em-rdl" },
+  titan: { "tp-press": "tp-row", "tp-row": "tp-bench", "tp-bench": "tp-squat", "tp-squat": "tp-rdl" },
 };
-function ceilingFor(programId, exerciseId){
+function ceilingFor(programId, exerciseId, sessionExs, progress){
   const explicit = BALANCE_CHAINS[programId];
   if (explicit) return explicit[exerciseId] || null;
-  // Other programs with shared generic ids: press ≤ row ≤ bench
+  // Other programs with shared generic ids: press ≤ row ≤ bench ≤ squat ≤ rdl (or dl)
   if (exerciseId === "ohp") return "row";
   if (exerciseId === "row") return "bench";
+  if (exerciseId === "bench") return "squat";
+  if (exerciseId === "squat") {
+    // Prefer rdl if both rdl and dl have a working weight
+    if (workingWeightFor("rdl", sessionExs, progress) != null) return "rdl";
+    if (workingWeightFor("dl", sessionExs, progress) != null) return "dl";
+    return "rdl";
+  }
   return null;
 }
 function liftLabelFor(id, sessionExs){
@@ -217,7 +224,7 @@ function workingWeightFor(id, sessionExs, progress){
 /** Gate a would-be kg bump. Equality with ceiling is OK; exceeding is held. Skips heave ladders. */
 function balanceKgHold(programId, ex, nextWeight, sessionExs, progress){
   if (!ex || isHeaveLadder(ex)) return null;
-  const ceilId = ceilingFor(programId, ex.id);
+  const ceilId = ceilingFor(programId, ex.id, sessionExs, progress);
   if (!ceilId) return null;
   const ceilW = workingWeightFor(ceilId, sessionExs, progress);
   if (ceilW == null || !Number.isFinite(ceilW)) return null;
