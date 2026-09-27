@@ -122,7 +122,7 @@
 <input type="file" id="import-file" accept="application/json,.json" class="hide" />
 <script>
 const STORAGE = "anvil_app_v3";
-const APP_VERSION = "anvil-v26";
+const APP_VERSION = "anvil-v27";
 const SET_OPTS = [1,2,3,4,5];
 const REP_OPTS = [5,6,8,10,12,15,20,30,40];
 const WAVE_REPS = [6, 8, 10, 12];
@@ -180,6 +180,57 @@ function usesAmrap(ex){
 function isWaveProgram(programId, ex){
   const pid = programId || (typeof state !== "undefined" && state?.programId);
   return pid === "ember" || pid === "anvil" || pid === "titan" || String(ex?.id||"").startsWith("em-");
+}
+
+/** Upwards-only strength chain: a lift may not kg-progress past the next lift UP the chain. */
+const BALANCE_CHAINS = {
+  anvil: { row: "bench" },
+  ember: { "em-press": "em-row", "em-row": "em-bench" },
+  titan: { "tp-press": "tp-row", "tp-row": "tp-bench" },
+};
+function ceilingFor(programId, exerciseId){
+  const explicit = BALANCE_CHAINS[programId];
+  if (explicit) return explicit[exerciseId] || null;
+  // Other programs with shared generic ids: press ≤ row ≤ bench
+  if (exerciseId === "ohp") return "row";
+  if (exerciseId === "row") return "bench";
+  return null;
+}
+function liftLabelFor(id, sessionExs){
+  const hit = (sessionExs || []).find(e => e.id === id);
+  if (hit?.name) return hit.name;
+  for (const p of PROGRAMS) {
+    for (const d of p.days) {
+      const ex = d.exercises.find(e => e.id === id);
+      if (ex?.name) return ex.name;
+    }
+  }
+  return id;
+}
+function workingWeightFor(id, sessionExs, progress){
+  const hit = (sessionExs || []).find(e => e.id === id);
+  if (hit && Number.isFinite(Number(hit.weight))) return Number(hit.weight);
+  const p = progress?.[id];
+  if (p && typeof p === "object" && Number.isFinite(Number(p.weight))) return Number(p.weight);
+  return null;
+}
+/** Gate a would-be kg bump. Equality with ceiling is OK; exceeding is held. Skips heave ladders. */
+function balanceKgHold(programId, ex, nextWeight, sessionExs, progress){
+  if (!ex || isHeaveLadder(ex)) return null;
+  const ceilId = ceilingFor(programId, ex.id);
+  if (!ceilId) return null;
+  const ceilW = workingWeightFor(ceilId, sessionExs, progress);
+  if (ceilW == null || !Number.isFinite(ceilW)) return null;
+  const nw = +Number(nextWeight).toFixed(1);
+  if (!(nw > ceilW)) return null;
+  return {
+    id: ex.id,
+    name: ex.name,
+    weight: Number(ex.weight) || 0,
+    ceilingId: ceilId,
+    ceilingName: liftLabelFor(ceilId, sessionExs),
+    ceilingWeight: ceilW,
+  };
 }
 function snapWaveRep(reps){
   const n = Number(reps);
@@ -669,7 +720,7 @@ let state = {
   soundVolume: 0.7,
   cuePack: "chime",
 };
-let ui = { remain:0, running:false, isGo:false, panel:"none", settingsTab:"program", pending:null, pickSets:3, pickReps:8, installHint:false, installed:false, toastTimer:null, swReg:null, updateReady:false, updateChecking:false, refreshing:false, appVersion: APP_VERSION, progressLiftId:null, bwDraftKg:null, bwLinkSession:false };
+let ui = { remain:0, running:false, isGo:false, panel:"none", settingsTab:"program", pending:null, pickSets:3, pickReps:8, installHint:false, installed:false, toastTimer:null, swReg:null, updateReady:false, updateChecking:false, refreshing:false, appVersion: APP_VERSION, progressLiftId:null, bwDraftKg:null, bwLinkSession:false, pendingHolds:null };
 let remainVal = 0, lastCue = -1, tick = null, deferredInstall = null;
 try {
   ui.installed = window.matchMedia("(display-mode: standalone)").matches || Boolean(navigator.standalone) || /ANVIL-APP/.test(navigator.userAgent) || location.hostname === "appassets.androidplatform.net";
@@ -899,6 +950,21 @@ function removeExercise(id){
 function logSession(){
   const notes = [];
   const lifts = [];
+  const balanceHolds = [];
+  const sessionExs = state.exercises;
+  const progressSnap = state.liftProgress || {};
+  const programId = state.programId;
+  /** Apply a +kg bump or hold for balance. On hold: keep weight + reps, streak stays at 3 so next clean retries. */
+  function takeKgBump(ex, nextWeight, nextReps, streakAfterOk, successNote){
+    const hold = balanceKgHold(programId, ex, nextWeight, sessionExs, progressSnap);
+    if (hold) {
+      notes.push(`${ex.name}: held for balance — stays ${hold.weight} kg until ${hold.ceilingName} moves up (now ${hold.ceilingWeight} kg)`);
+      balanceHolds.push(hold);
+      return { weight: ex.weight, reps: ex.reps, streak: 3, held: true };
+    }
+    notes.push(successNote);
+    return { weight: nextWeight, reps: nextReps, streak: streakAfterOk, held: false };
+  }
   const exercises = state.exercises.map(ex => {
     const touched = ex.setsLog.some(s => s.ok || s.miss);
     if (ex.skipped || !touched) {
@@ -949,6 +1015,7 @@ function logSession(){
       // Ember / Anvil / Titan shared ladder: 6 → 8 → 10 → 12, then 6 +2.5kg
       // Heave ladder + TITAN plate-bench → barbell graduate
       // AMRAP last-set (+2 over target) bumps load immediately — skips wave climb this session
+      // Balance chain only gates kg bumps (not wave climbs or stage graduates)
       let streak = (ex.streak||0) + 1;
       let {reps, weight} = ex;
       let levelIndex = ex.levelIndex ?? 0;
@@ -964,13 +1031,15 @@ function logSession(){
             reps = nextStage.startReps; weight = nextStage.startWeight;
             notes.push(`${ex.name}: AMRAP ${lastReps} → graduated → ${nextStage.name}`);
           } else {
-            weight = +(weight + 2.5).toFixed(1);
-            notes.push(`${ex.name}: AMRAP ${lastReps} → +2.5kg · ${weight}kg × ${reps}`);
+            const bumped = +(weight + 2.5).toFixed(1);
+            const r = takeKgBump(ex, bumped, reps, 0, `${ex.name}: AMRAP ${lastReps} → +2.5kg · ${bumped}kg × ${reps}`);
+            weight = r.weight; reps = r.reps; streak = r.streak;
           }
         } else {
           // Full heaves (final stage) and normal wave lifts: +2.5kg, keep reps
-          weight = +(weight + 2.5).toFixed(1);
-          notes.push(`${ex.name}: AMRAP ${lastReps} → +2.5kg · ${weight}kg × ${reps}`);
+          const bumped = +(weight + 2.5).toFixed(1);
+          const r = takeKgBump(ex, bumped, reps, 0, `${ex.name}: AMRAP ${lastReps} → +2.5kg · ${bumped}kg × ${reps}`);
+          weight = r.weight; reps = r.reps; streak = r.streak;
         }
       } else if (streak < 3) {
         const sec = isPlankSeconds(ex);
@@ -996,6 +1065,7 @@ function logSession(){
             levelIndex = idx + 1; reps = 6; weight = 0; streak = 0;
             notes.push(`${ex.name}: graduated → ${HEAVE_STAGES[levelIndex].name}`);
           } else {
+            // Heave ladder kg bumps are skipped from the balance chain (BW / no clear ceiling)
             const step = nextWaveStep(reps, weight);
             reps = step.reps; weight = step.weight; streak = 0;
             notes.push(`${ex.name}: ${step.note}`);
@@ -1014,8 +1084,13 @@ function logSession(){
           notes.push(`${ex.name}: graduated → ${nextStage.name}`);
         } else {
           const step = nextWaveStep(reps, weight);
-          reps = step.reps; weight = step.weight; streak = 0;
-          notes.push(`${ex.name}: ${step.note}`);
+          if (step.weight > weight) {
+            const r = takeKgBump(ex, step.weight, step.reps, 0, `${ex.name}: ${step.note}`);
+            weight = r.weight; reps = r.reps; streak = r.streak;
+          } else {
+            reps = step.reps; weight = step.weight; streak = 0;
+            notes.push(`${ex.name}: ${step.note}`);
+          }
         }
       } else if (isPlankSeconds(ex)) {
         if (reps < 30) {
@@ -1027,8 +1102,13 @@ function logSession(){
         }
       } else {
         const step = nextWaveStep(reps, weight);
-        reps = step.reps; weight = step.weight; streak = 0;
-        notes.push(`${ex.name}: ${step.note}`);
+        if (step.weight > weight) {
+          const r = takeKgBump(ex, step.weight, step.reps, 0, `${ex.name}: ${step.note}`);
+          weight = r.weight; reps = r.reps; streak = r.streak;
+        } else {
+          reps = step.reps; weight = step.weight; streak = 0;
+          notes.push(`${ex.name}: ${step.note}`);
+        }
       }
       let out = {...ex, streak, failStreak:0, reps, weight, levelIndex, setsLog: blankSets(ex.sets)};
       if (isHeaveLadder(out)) out = syncHeaveExercise(out);
@@ -1039,8 +1119,10 @@ function logSession(){
     let levelIndex = ex.levelIndex ?? 0;
     if (amrapHit) {
       if (weight > 0 || !ex.bw) {
-        weight = +(weight + 2.5).toFixed(1);
-        notes.push(`${ex.name}: AMRAP ${lastReps} → +2.5kg · ${weight}kg × ${reps}`);
+        const bumped = +(weight + 2.5).toFixed(1);
+        const r = takeKgBump(ex, bumped, reps, 0, `${ex.name}: AMRAP ${lastReps} → +2.5kg · ${bumped}kg × ${reps}`);
+        weight = r.weight; reps = r.reps;
+        return {...ex, streak:r.streak, failStreak:0, reps, weight, levelIndex, setsLog: blankSets(ex.sets)};
       } else {
         reps = Math.max(ex.reps + 2, lastReps);
         notes.push(`${ex.name}: AMRAP ${lastReps} → reps ${reps}`);
@@ -1063,9 +1145,20 @@ function logSession(){
         else { reps += 2; notes.push(`${ex.name}: reps → ${reps} · ${ex.levels[levelIndex]}`); }
       } else if (ex.bw) {
         if (ex.nocap || reps < (ex.cap||16)) { reps += 2; notes.push(`${ex.name}: reps → ${reps}`); }
-        else { weight = +(weight+2.5).toFixed(1); notes.push(`${ex.name}: +2.5kg → ${weight}`); }
-      } else if (ex.cap && reps >= ex.cap) { weight = +(weight+2.5).toFixed(1); notes.push(`${ex.name}: +2.5kg → ${weight}`); }
-      else if (reps >= 12) { reps = 8; weight = +(weight+2.5).toFixed(1); notes.push(`${ex.name}: +2.5kg → ${weight}, reps 8`); }
+        else {
+          const bumped = +(weight+2.5).toFixed(1);
+          const r = takeKgBump(ex, bumped, reps, 3, `${ex.name}: +2.5kg → ${bumped}`);
+          weight = r.weight; reps = r.reps; streak = r.held ? 3 : 0;
+        }
+      } else if (ex.cap && reps >= ex.cap) {
+        const bumped = +(weight+2.5).toFixed(1);
+        const r = takeKgBump(ex, bumped, reps, 3, `${ex.name}: +2.5kg → ${bumped}`);
+        weight = r.weight; reps = r.reps; streak = r.held ? 3 : 0;
+      } else if (reps >= 12) {
+        const bumped = +(weight+2.5).toFixed(1);
+        const r = takeKgBump(ex, bumped, 8, 3, `${ex.name}: +2.5kg → ${bumped}, reps 8`);
+        weight = r.weight; reps = r.reps; streak = r.held ? 3 : 0;
+      }
       else { reps += 2; notes.push(`${ex.name}: reps → ${reps}`); }
     } else notes.push(`${ex.name}: clean ${streak}/3 at ${reps}`);
     return {...ex, streak, failStreak:0, reps, weight, levelIndex, setsLog: blankSets(ex.sets)};
@@ -1073,6 +1166,7 @@ function logSession(){
   state.exercises = exercises;
   state.liftProgress = captureProgress(exercises, state.liftProgress);
   state.history = [{date:new Date().toISOString(), notes, lifts}, ...state.history].slice(0,60);
+  ui.pendingHolds = balanceHolds.length ? balanceHolds : null;
   save();
   return notes;
 }
@@ -1194,11 +1288,23 @@ function onLog(){
   if (!anyWork) { toast("Tick a set first — blank lifts are skipped"); return; }
   const notes = logSession();
   toast("Session logged", notes.slice(0,3).join(" · "));
+  stopRest();
+  if (ui.pendingHolds?.length) {
+    ui.panel = "balance-hold";
+  } else {
+    const lastKg = state.bodyWeightLog[0]?.kg;
+    ui.bwDraftKg = (typeof lastKg === "number" && lastKg > 0) ? lastKg : null;
+    ui.bwLinkSession = true;
+    ui.panel = "bodyweight";
+  }
+  render();
+}
+function dismissBalanceHold(){
+  ui.pendingHolds = null;
   const lastKg = state.bodyWeightLog[0]?.kg;
   ui.bwDraftKg = (typeof lastKg === "number" && lastKg > 0) ? lastKg : null;
   ui.bwLinkSession = true;
   ui.panel = "bodyweight";
-  stopRest();
   render();
 }
 
@@ -1518,6 +1624,19 @@ function render(){
   const bwShown = (typeof ui.bwDraftKg === "number" && ui.bwDraftKg > 0)
     ? ui.bwDraftKg.toFixed(1).replace(/\.0$/, "")
     : "—";
+  const holdLines = (ui.pendingHolds || []).map(h =>
+    `${esc(h.name)} stays at ${h.weight} kg until ${esc(h.ceilingName)} moves up (now ${h.ceilingWeight} kg).`
+  );
+  const balanceHold = ui.panel==="balance-hold" && ui.pendingHolds?.length ? `<div class="settings-sheet" role="dialog" aria-modal="true" aria-label="Held for balance"><div class="settings-sheet-inner">
+    <div class="settings-head"><h2>Held for balance</h2><button class="icon-btn" data-act="dismiss-hold" aria-label="Close">${I.x}</button></div>
+    <div class="settings-body" style="justify-content:center">
+      <p class="note" style="text-align:center;margin:0 0 1rem">Improve the bigger lift first — upwards chain only.</p>
+      ${holdLines.map(line => `<p class="note" style="text-align:center;margin:0 0 .75rem;color:var(--fg)">${line}</p>`).join("")}
+      <div class="split" style="margin-top:1rem">
+        <button class="primary" data-act="dismiss-hold" style="width:100%">Got it</button>
+      </div>
+    </div>
+  </div></div>` : "";
   const bodyweight = ui.panel==="bodyweight" ? `<div class="settings-sheet" role="dialog" aria-modal="true" aria-label="Body weight"><div class="settings-sheet-inner">
     <div class="settings-head"><h2>Body weight</h2><button class="icon-btn" data-act="skip-bw" aria-label="Close">${I.x}</button></div>
     <div class="settings-body" style="justify-content:center">
@@ -1585,6 +1704,7 @@ function render(){
       <button data-act="reset">${I.reset} Reset</button>
     </div>
     <p class="foot">Tap the big number to complete that set (tap again clears). − / + dial that set’s reps — going below the target marks it failed (red). Leave a lift blank or skip — it won’t count. Last set AMRAP on most lifts — hit target+2 (or more) to add 2.5kg next time. Timed holds and early heave stages skip AMRAP. Ember / Anvil / Titan: 3 clean at a rung climbs 6→8→10→12, then 3×6 +2.5kg (plank waves 20→30→20s, no kg) — AMRAP load bump skips the wave climb that session. Heaves ladder: hang → feet assist → negatives → full (auto-graduate after wave). Titan plate bench: 3 clean at 3×12 @ ≥10kg → barbell 3×6 @ 20kg (AMRAP at 12 @ ≥10kg also graduates). Other programs: 3 clean → +2 reps (or +2.5 kg at cap). 3 short sessions → reset week (drop kg first if loaded).</p>
+    ${balanceHold}
     ${bodyweight}
     ${settings}
   `;
@@ -1655,6 +1775,7 @@ document.getElementById("app").addEventListener("click", (e) => {
     const lab = document.querySelector("[data-vol-label]");
     if (lab) lab.textContent = `${Math.round(state.soundVolume * 100)}%`;
   }
+  else if (act==="dismiss-hold") dismissBalanceHold();
   else if (act==="save-bw") saveBodyWeight();
   else if (act==="skip-bw") skipBodyWeight();
   else if (act==="bw-step") bumpBodyWeight(+btn.dataset.d);
