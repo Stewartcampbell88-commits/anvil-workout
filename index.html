@@ -137,7 +137,9 @@
 <input type="file" id="import-file" accept="application/json,.json" class="hide" />
 <script>
 const STORAGE = "anvil_app_v3";
-const APP_VERSION = "anvil-v32";
+const APP_VERSION = "anvil-v33";
+const CUE_LOUDNESS = 2.4;
+const CUE_MAX_GAIN = 0.95;
 const SET_OPTS = [1,2,3,4,5];
 const REP_OPTS = [5,6,8,10,12,15,20,30,40];
 const WAVE_REPS = [6, 8, 10, 12];
@@ -698,7 +700,7 @@ function playTone({ freq, dur = 0.14, type = "sine", attack = 0.01, release = 0.
   o.type = type;
   o.frequency.setValueAtTime(freq, t0);
   if (slideTo != null) o.frequency.exponentialRampToValueAtTime(Math.max(20, slideTo), t0 + dur * 0.85);
-  const peak = Math.max(0.0001, vol * gain);
+  const peak = Math.max(0.0001, Math.min(CUE_MAX_GAIN, vol * gain * CUE_LOUDNESS));
   const atk = Math.max(0.004, attack);
   const rel = Math.max(atk + 0.02, dur);
   g.gain.setValueAtTime(0.0001, t0);
@@ -713,14 +715,14 @@ function playTick(n, toneStyle){
   // Rising mid ticks for 3→2→1
   const base = { 3: 660, 2: 740, 1: 830 }[n] || 700;
   if (toneStyle === "pulse") {
-    playTone({ freq: base * 0.45, dur: 0.11, type: "triangle", attack: 0.006, release: 0.1, gain: 0.28 });
-    playTone({ freq: base * 0.9, dur: 0.08, type: "sine", attack: 0.004, release: 0.07, gain: 0.1 });
+    playTone({ freq: base * 0.45, dur: 0.11, type: "triangle", attack: 0.006, release: 0.1, gain: 0.32 });
+    playTone({ freq: base * 0.9, dur: 0.08, type: "sine", attack: 0.004, release: 0.07, gain: 0.12 });
   } else if (toneStyle === "bell") {
-    playTone({ freq: base * 1.15, dur: 0.1, type: "sine", attack: 0.005, release: 0.12, gain: 0.16 });
-    playTone({ freq: base * 2.3, dur: 0.08, type: "sine", attack: 0.004, release: 0.09, gain: 0.06 });
+    playTone({ freq: base * 1.15, dur: 0.1, type: "sine", attack: 0.005, release: 0.12, gain: 0.19 });
+    playTone({ freq: base * 2.3, dur: 0.08, type: "sine", attack: 0.004, release: 0.09, gain: 0.08 });
   } else {
     // chime (default)
-    playTone({ freq: base, dur: 0.1, type: "sine", attack: 0.008, release: 0.09, gain: 0.18 });
+    playTone({ freq: base, dur: 0.1, type: "sine", attack: 0.008, release: 0.09, gain: 0.21 });
   }
 }
 
@@ -728,19 +730,19 @@ function playEndChime(toneStyle, { soft = false } = {}){
   const t0 = ctx ? ctx.currentTime : 0;
   const gScale = soft ? 0.55 : 1;
   if (toneStyle === "pulse") {
-    playTone({ freq: 140, dur: 0.22, type: "triangle", attack: 0.01, release: 0.2, gain: 0.32 * gScale, when: t0 });
-    playTone({ freq: 220, dur: 0.28, type: "sine", attack: 0.012, release: 0.24, gain: 0.22 * gScale, when: t0 + 0.1 });
-    playTone({ freq: 330, dur: 0.35, type: "sine", attack: 0.015, release: 0.3, gain: 0.18 * gScale, when: t0 + 0.22 });
+    playTone({ freq: 140, dur: 0.22, type: "triangle", attack: 0.01, release: 0.2, gain: 0.36 * gScale, when: t0 });
+    playTone({ freq: 220, dur: 0.28, type: "sine", attack: 0.012, release: 0.24, gain: 0.25 * gScale, when: t0 + 0.1 });
+    playTone({ freq: 330, dur: 0.35, type: "sine", attack: 0.015, release: 0.3, gain: 0.21 * gScale, when: t0 + 0.22 });
   } else if (toneStyle === "bell") {
-    playTone({ freq: 880, dur: 0.45, type: "sine", attack: 0.004, release: 0.42, gain: 0.2 * gScale, when: t0 });
-    playTone({ freq: 1320, dur: 0.35, type: "sine", attack: 0.004, release: 0.32, gain: 0.1 * gScale, when: t0 });
-    playTone({ freq: 1760, dur: 0.25, type: "sine", attack: 0.003, release: 0.22, gain: 0.05 * gScale, when: t0 + 0.02 });
-    playTone({ freq: 1046, dur: 0.4, type: "sine", attack: 0.006, release: 0.36, gain: 0.14 * gScale, when: t0 + 0.16 });
+    playTone({ freq: 880, dur: 0.45, type: "sine", attack: 0.004, release: 0.42, gain: 0.23 * gScale, when: t0 });
+    playTone({ freq: 1320, dur: 0.35, type: "sine", attack: 0.004, release: 0.32, gain: 0.12 * gScale, when: t0 });
+    playTone({ freq: 1760, dur: 0.25, type: "sine", attack: 0.003, release: 0.22, gain: 0.06 * gScale, when: t0 + 0.02 });
+    playTone({ freq: 1046, dur: 0.4, type: "sine", attack: 0.006, release: 0.36, gain: 0.16 * gScale, when: t0 + 0.16 });
   } else {
     // Warm ascending three-note chime (Strong/Hevy-ish)
-    playTone({ freq: 523.25, dur: 0.18, type: "sine", attack: 0.01, release: 0.16, gain: 0.2 * gScale, when: t0 });
-    playTone({ freq: 659.25, dur: 0.2, type: "sine", attack: 0.01, release: 0.18, gain: 0.2 * gScale, when: t0 + 0.12 });
-    playTone({ freq: 783.99, dur: 0.32, type: "sine", attack: 0.012, release: 0.28, gain: 0.22 * gScale, when: t0 + 0.26 });
+    playTone({ freq: 523.25, dur: 0.18, type: "sine", attack: 0.01, release: 0.16, gain: 0.23 * gScale, when: t0 });
+    playTone({ freq: 659.25, dur: 0.2, type: "sine", attack: 0.01, release: 0.18, gain: 0.23 * gScale, when: t0 + 0.12 });
+    playTone({ freq: 783.99, dur: 0.32, type: "sine", attack: 0.012, release: 0.28, gain: 0.25 * gScale, when: t0 + 0.26 });
   }
 }
 
@@ -752,7 +754,7 @@ function playClip(key){
     try {
       const src = ctx.createBufferSource();
       const g = ctx.createGain();
-      g.gain.value = vol;
+      g.gain.value = Math.min(CUE_MAX_GAIN, vol * CUE_LOUDNESS);
       src.buffer = buf;
       src.connect(g); g.connect(ctx.destination);
       src.start(0);
@@ -764,7 +766,7 @@ function playClip(key){
     const url = CLIP_URLS[key];
     if (!url) return;
     const a = new Audio(url);
-    a.volume = vol;
+    a.volume = Math.min(CUE_MAX_GAIN, vol * CUE_LOUDNESS);
     a.play().catch(() => {});
   } catch {}
 }
@@ -832,8 +834,9 @@ let state = {
   history: [],
   liftProgress: {},
   bodyWeightLog: [],
-  soundVolume: 0.7,
+  soundVolume: 1.0,
   cuePack: "chime",
+  loudCuesV33: true,
 };
 let ui = { remain:0, running:false, isGo:false, panel:"none", settingsTab:"program", pending:null, pickSets:3, pickReps:8, installHint:false, installed:false, toastTimer:null, swReg:null, updateReady:false, updateChecking:false, refreshing:false, appVersion: APP_VERSION, progressLiftId:null, bwDraftKg:null, bwLinkSession:false, pendingHolds:null, expandedEx:new Set() };
 let remainVal = 0, lastCue = -1, tick = null, deferredInstall = null;
@@ -852,7 +855,7 @@ window.addEventListener("appinstalled", () => {
 
 function clampVolume(v){
   const n = Number(v);
-  if (!Number.isFinite(n)) return 0.7;
+  if (!Number.isFinite(n)) return 1.0;
   return Math.max(0, Math.min(1, n));
 }
 function normalizeCuePack(id){
@@ -920,6 +923,8 @@ function load(){
         }
       }
     }
+    const legacyCueDefault = raw.soundVolume === 0.7;
+    const needsCueMigration = raw.loudCuesV33 !== true;
     state = {
       programId: program.id,
       dayIndex,
@@ -927,10 +932,12 @@ function load(){
       exercises: applyProgress(baseExs, liftProgress, program.id),
       history: raw.history || [],
       bodyWeightLog: Array.isArray(raw.bodyWeightLog) ? raw.bodyWeightLog : [],
-      soundVolume: clampVolume(raw.soundVolume ?? 0.7),
+      // Preserve an explicit mute or custom preference; only promote the old default once.
+      soundVolume: clampVolume(needsCueMigration && legacyCueDefault ? 1.0 : (raw.soundVolume ?? 1.0)),
       cuePack: normalizeCuePack(raw.cuePack),
+      loudCuesV33: true,
     };
-    if (normalizeWaveTargets()) save();
+    if (normalizeWaveTargets() || needsCueMigration) save();
   } catch {}
 }
 function save(){
@@ -939,6 +946,7 @@ function save(){
     exercises: state.exercises, history: state.history, liftProgress: state.liftProgress,
     bodyWeightLog: state.bodyWeightLog || [],
     soundVolume: clampVolume(state.soundVolume), cuePack: normalizeCuePack(state.cuePack),
+    loudCuesV33: true,
   }));
 }
 
@@ -948,6 +956,7 @@ function backupPayload(){
     exercises: state.exercises, history: state.history, liftProgress: state.liftProgress,
     bodyWeightLog: state.bodyWeightLog || [],
     soundVolume: clampVolume(state.soundVolume), cuePack: normalizeCuePack(state.cuePack),
+    loudCuesV33: true,
   };
 }
 
@@ -1001,8 +1010,9 @@ function importBackup(){
         history: Array.isArray(raw.history) ? raw.history : [],
         liftProgress: raw.liftProgress && typeof raw.liftProgress === "object" ? raw.liftProgress : {},
         bodyWeightLog: Array.isArray(raw.bodyWeightLog) ? raw.bodyWeightLog : [],
-        soundVolume: clampVolume(raw.soundVolume ?? 0.7),
+        soundVolume: clampVolume(raw.soundVolume ?? 1.0),
         cuePack: normalizeCuePack(raw.cuePack),
+        loudCuesV33: true,
       }));
       load();
       stopRest();
@@ -1775,7 +1785,7 @@ function render(){
         <p class="tiny" style="margin-top:.875rem;letter-spacing:.08em">Rest cues</p>
         <div class="cue-list">${Object.values(CUE_PACKS).map(p=>`<button class="prog${p.id===state.cuePack?" on":""}" data-act="cue-pack" data-id="${p.id}"><span style="font-size:1rem;font-weight:700">${esc(p.name)}</span><span class="note" style="${p.id===state.cuePack?"opacity:.8;color:inherit":""}">${esc(p.blurb)}</span></button>`).join("")}</div>
         <button class="split" style="width:100%;margin-top:.75rem"><span class="primary" style="display:flex;width:100%;min-height:2.75rem;border-radius:.75rem;align-items:center;justify-content:center;font-weight:700;gap:.5rem" data-act="preview-sound">${I.sound} Preview</span></button>
-        <p class="note" style="margin-top:.75rem">Cues fire on the last 3 seconds of rest. Tone packs use soft app-style chimes; voice packs use real Aussie audio (not browser TTS). Volume 0 mutes everything.</p>
+        <p class="note" style="margin-top:.75rem">Cues fire on the last 3 seconds of rest. Tone packs use soft app-style chimes; voice packs use real Aussie audio (not browser TTS). Volume 0 mutes everything. Max volume is boosted to cut through phone music.</p>
       </section>`;
   } else if (settingsTab === "history") {
     settingsDetail = `<section class="panel"><p class="tiny">Session log</p>${
@@ -2028,7 +2038,7 @@ try {
   render();
 } catch {
   try { localStorage.removeItem(STORAGE); } catch {}
-  state = { programId:"anvil", dayIndex:0, exercises: seedProgram("anvil", 0), history:[], liftProgress:{}, bodyWeightLog:[], soundVolume:0.7, cuePack:"chime" };
+  state = { programId:"anvil", dayIndex:0, exercises: seedProgram("anvil", 0), history:[], liftProgress:{}, bodyWeightLog:[], soundVolume:1.0, cuePack:"chime", loudCuesV33:true };
   try { render(); } catch {}
 }
 if (location.protocol.startsWith("http") && "serviceWorker" in navigator) {
