@@ -122,7 +122,7 @@
 <input type="file" id="import-file" accept="application/json,.json" class="hide" />
 <script>
 const STORAGE = "anvil_app_v3";
-const APP_VERSION = "anvil-v28";
+const APP_VERSION = "anvil-v29";
 const SET_OPTS = [1,2,3,4,5];
 const REP_OPTS = [5,6,8,10,12,15,20,30,40];
 const WAVE_REPS = [6, 8, 10, 12];
@@ -136,7 +136,7 @@ const HEAVE_STAGES = [
 
 const BENCH_STAGES = [
   { name:"Plate bench", note:"Lie on bench or floor. Press plates together or use a plate in each hand. Build to 10 kg × 12, then move to the bar.", startWeight:2.5, startReps:6, useBar:false },
-  { name:"Barbell bench", note:"Empty bar first if needed. Feet planted, lower to chest, press up.", startWeight:20, startReps:6, useBar:true },
+  { name:"Bench Press", note:"Empty bar first if needed. Feet planted, lower to chest, press up.", startWeight:20, startReps:6, useBar:true },
 ];
 
 function isHeaveLadder(ex){
@@ -295,16 +295,16 @@ function bw(id,name,sets,reps,rest,block,extra={}) {
 const PROGRAMS = [
   {id:"anvil", name:"ANVIL", blurb:"2× week A/B. Wave 6→8→10→12 then +2.5kg. Heaves on B.", days:[
     {label:"A", exercises:[
-      bb("squat","Barbell squat",3,8,120,"Day A"),
-      bb("bench","Barbell bench",3,8,120,"Day A"),
-      bb("row","Barbell row",3,8,90,"Day A"),
+      bb("squat","Squat",3,8,120,"Day A"),
+      bb("bench","Bench Press",3,8,120,"Day A"),
+      bb("row","Bent over row",3,8,90,"Day A"),
       bw("bext","Back extension",3,10,75,"Day A",{cap:14}),
       bw("abd","Side-lying abduction",3,12,45,"Day A",{cap:16,bilateral:true,note:"Extra on the right"}),
       bb("sgm","Seated good morning",3,8,90,"Day A",{cap:12,note:"Bar on upper back, sit tall, hinge from the hips. Soft knees."}),
     ]},
     {label:"B", exercises:[
-      bb("rdl","Barbell RDL",3,8,120,"Day B"),
-      bb("ohp","Barbell OHP",3,8,90,"Day B"),
+      bb("rdl","RDL",3,8,120,"Day B"),
+      bb("ohp","Overhead press",3,8,90,"Day B"),
       bw("lunge","Bulgarian split squat",3,8,75,"Day B",{cap:12,bilateral:true}),
       bw("psoas","Psoas march",3,8,45,"Day B",{cap:12,bilateral:true}),
       bw("lmr","Landmine rotation",3,8,60,"Day B",{cap:12,bilateral:true}),
@@ -313,17 +313,17 @@ const PROGRAMS = [
   ]},
   {id:"titan", name:"TITAN PROTOCOL", blurb:"Marcus · junior ANVIL. A/B wave 6→8→10→12. Plate bench → bar at 10kg×12.", days:[
     {label:"A", exercises:[
-      bb("tp-squat","Squats",3,6,75,"Day A",{weight:0,cap:12,note:"Chair OK. Feet shoulder-width. Sit back, knees track toes, stand tall."}),
+      bb("tp-squat","Squat",3,6,75,"Day A",{weight:0,cap:12,note:"Chair OK. Feet shoulder-width. Sit back, knees track toes, stand tall."}),
       bb("tp-bench", BENCH_STAGES[0].name, 3, 6, 90, "Day A", {
         weight:2.5, cap:12, benchLadder:true, levels: BENCH_STAGES.map(s=>s.name), levelIndex:0,
         note: BENCH_STAGES[0].note
       }),
-      bb("tp-row","Bent-over row",3,6,60,"Day A",{weight:2.5,cap:14,note:"Light plates start 2.5. Hinge, pull to ribs, lower slow."}),
+      bb("tp-row","Bent over row",3,6,60,"Day A",{weight:2.5,cap:14,note:"Light plates start 2.5. Hinge, pull to ribs, lower slow."}),
       bw("tp-deadbug","Dead bug",3,6,45,"Day A",{bilateral:true,cap:12,note:"Lower back glued to the floor. Opposite arm and leg."}),
     ]},
     {label:"B", exercises:[
       bb("tp-rdl","Plate RDL",3,6,75,"Day B",{weight:2.5,cap:12,note:"2.5 kg plates in both hands. Soft knees, hips back, flat back."}),
-      bb("tp-press","Shoulder press",3,6,60,"Day B",{weight:2.5,cap:12,note:"2.5 kg plates. Press overhead, don’t shrug."}),
+      bb("tp-press","Overhead press",3,6,60,"Day B",{weight:2.5,cap:12,note:"2.5 kg plates. Press overhead, don’t shrug."}),
       bw("tp-lunge","Reverse lunges",3,6,60,"Day B",{bilateral:true,cap:12,note:"Reverse lunge. Step back, both knees ~90°. Drive through front heel."}),
       bw("tp-heaves", HEAVE_STAGES[0].name, 3, HEAVE_STAGES[0].startReps, 75, "Day B", {
         nocap:true, heaveLadder:true, levels: HEAVE_STAGES.map(s=>s.name), levelIndex:0,
@@ -334,14 +334,14 @@ const PROGRAMS = [
   ]},
   {id:"ember", name:"EMBER", blurb:"Beginner 3× week. Wave 6→8→10→12 then +2.5kg. Day B heaves: hang → feet assist → negatives → full (auto-graduate).", days:[
     {label:"A", exercises:[
-      bb("em-squat","Squats",3,6,75,"Day A",{weight:0,cap:12,note:"Sit to a chair if needed. Hold a plate when ready."}),
-      bb("em-bench","Barbell bench",3,6,90,"Day A",{weight:20,cap:10,note:"Empty bar first if needed. Feet planted, lower to chest, press up."}),
-      bb("em-row","Bent-over row",3,6,60,"Day A",{weight:2.5,cap:14,note:"2.5 kg plates. Hinge, pull to ribs, lower slow."}),
+      bb("em-squat","Squat",3,6,75,"Day A",{weight:0,cap:12,note:"Sit to a chair if needed. Hold a plate when ready."}),
+      bb("em-bench","Bench Press",3,6,90,"Day A",{weight:20,cap:10,note:"Empty bar first if needed. Feet planted, lower to chest, press up."}),
+      bb("em-row","Bent over row",3,6,60,"Day A",{weight:2.5,cap:14,note:"2.5 kg plates. Hinge, pull to ribs, lower slow."}),
       bw("em-deadbug","Dead bug",3,6,45,"Day A",{bilateral:true,cap:12,note:"Lower back glued to the floor. Opposite arm and leg."}),
     ]},
     {label:"B", exercises:[
       bb("em-rdl","Plate RDL",3,6,75,"Day B",{weight:2.5,cap:12,note:"2.5 kg plates in both hands. Soft knees, hips back, flat back."}),
-      bb("em-press","Shoulder press",3,6,60,"Day B",{weight:2.5,cap:12,note:"2.5 kg plates. Press overhead, don’t shrug."}),
+      bb("em-press","Overhead press",3,6,60,"Day B",{weight:2.5,cap:12,note:"2.5 kg plates. Press overhead, don’t shrug."}),
       bw("em-heaves", HEAVE_STAGES[0].name, 3, HEAVE_STAGES[0].startReps, 90, "Day B", {
         nocap:true, heaveLadder:true, levels: HEAVE_STAGES.map(s=>s.name), levelIndex:0,
         note: HEAVE_STAGES[0].note
@@ -350,51 +350,51 @@ const PROGRAMS = [
     ]},
   ]},
   {id:"five-by-five", name:"5×5", blurb:"StrongLifts-style. Alternate A / B, add 2.5 kg when all 5s are clean.", days:[
-    {label:"A", exercises:[bb("squat","Barbell squat",5,5,180,"Day A",{cap:5}), bb("bench","Barbell bench",5,5,150,"Day A",{cap:5}), bb("row","Barbell row",5,5,150,"Day A",{cap:5})]},
-    {label:"B", exercises:[bb("squat","Barbell squat",5,5,180,"Day B",{cap:5}), bb("ohp","Barbell OHP",5,5,150,"Day B",{cap:5}), bb("dl","Deadlift",1,5,180,"Day B",{cap:5})]},
+    {label:"A", exercises:[bb("squat","Squat",5,5,180,"Day A",{cap:5}), bb("bench","Bench Press",5,5,150,"Day A",{cap:5}), bb("row","Bent over row",5,5,150,"Day A",{cap:5})]},
+    {label:"B", exercises:[bb("squat","Squat",5,5,180,"Day B",{cap:5}), bb("ohp","Overhead press",5,5,150,"Day B",{cap:5}), bb("dl","Deadlift",1,5,180,"Day B",{cap:5})]},
   ]},
   {id:"starting-strength", name:"Starting Strength", blurb:"Novice 3×5. Squat every session. Bench and press trade days.", days:[
-    {label:"A", exercises:[bb("squat","Barbell squat",3,5,180,"Day A",{cap:5}), bb("bench","Barbell bench",3,5,150,"Day A",{cap:5}), bb("dl","Deadlift",1,5,180,"Day A",{cap:5})]},
-    {label:"B", exercises:[bb("squat","Barbell squat",3,5,180,"Day B",{cap:5}), bb("ohp","Barbell OHP",3,5,150,"Day B",{cap:5}), bw("chin","Chin-ups",3,8,120,"Day B",{nocap:true})]},
+    {label:"A", exercises:[bb("squat","Squat",3,5,180,"Day A",{cap:5}), bb("bench","Bench Press",3,5,150,"Day A",{cap:5}), bb("dl","Deadlift",1,5,180,"Day A",{cap:5})]},
+    {label:"B", exercises:[bb("squat","Squat",3,5,180,"Day B",{cap:5}), bb("ohp","Overhead press",3,5,150,"Day B",{cap:5}), bw("chin","Chin-ups",3,8,120,"Day B",{nocap:true})]},
   ]},
   {id:"greyskull", name:"Greyskull LP", blurb:"2–3×5 with a last-set push. Simple linear progression.", days:[
-    {label:"A", exercises:[bb("bench","Barbell bench",3,5,150,"Day A",{cap:8}), bb("row","Barbell row",3,5,120,"Day A",{cap:8}), bb("squat","Barbell squat",3,5,180,"Day A",{cap:8})]},
-    {label:"B", exercises:[bb("ohp","Barbell OHP",3,5,150,"Day B",{cap:8}), bw("chin","Chin-ups",3,8,120,"Day B",{nocap:true}), bb("dl","Deadlift",1,5,180,"Day B",{cap:5})]},
+    {label:"A", exercises:[bb("bench","Bench Press",3,5,150,"Day A",{cap:8}), bb("row","Bent over row",3,5,120,"Day A",{cap:8}), bb("squat","Squat",3,5,180,"Day A",{cap:8})]},
+    {label:"B", exercises:[bb("ohp","Overhead press",3,5,150,"Day B",{cap:8}), bw("chin","Chin-ups",3,8,120,"Day B",{nocap:true}), bb("dl","Deadlift",1,5,180,"Day B",{cap:5})]},
   ]},
   {id:"gzclp", name:"GZCLP", blurb:"T1 heavy, T2 volume, T3 pump. Two rotating days.", days:[
-    {label:"A", exercises:[bb("squat","Barbell squat",5,3,180,"T1",{cap:3}), bb("bench","Barbell bench",3,10,120,"T2",{cap:10}), bb("pulldown","Lat pulldown",3,15,75,"T3",{cap:15})]},
-    {label:"B", exercises:[bb("ohp","Barbell OHP",5,3,150,"T1",{cap:3}), bb("dl","Deadlift",3,10,150,"T2",{cap:10}), bb("row","Barbell row",3,15,90,"T3",{cap:15})]},
+    {label:"A", exercises:[bb("squat","Squat",5,3,180,"T1",{cap:3}), bb("bench","Bench Press",3,10,120,"T2",{cap:10}), bb("pulldown","Lat pulldown",3,15,75,"T3",{cap:15})]},
+    {label:"B", exercises:[bb("ohp","Overhead press",5,3,150,"T1",{cap:3}), bb("dl","Deadlift",3,10,150,"T2",{cap:10}), bb("row","Bent over row",3,15,90,"T3",{cap:15})]},
   ]},
   {id:"phraks", name:"Phraks GSLP", blurb:"3×5 full-body. A/B like 5×5, slightly less volume.", days:[
-    {label:"A", exercises:[bb("squat","Barbell squat",3,5,180,"Day A",{cap:5}), bb("bench","Barbell bench",3,5,150,"Day A",{cap:5}), bb("row","Barbell row",3,5,120,"Day A",{cap:5})]},
-    {label:"B", exercises:[bb("squat","Barbell squat",3,5,180,"Day B",{cap:5}), bb("ohp","Barbell OHP",3,5,150,"Day B",{cap:5}), bb("dl","Deadlift",1,5,180,"Day B",{cap:5})]},
+    {label:"A", exercises:[bb("squat","Squat",3,5,180,"Day A",{cap:5}), bb("bench","Bench Press",3,5,150,"Day A",{cap:5}), bb("row","Bent over row",3,5,120,"Day A",{cap:5})]},
+    {label:"B", exercises:[bb("squat","Squat",3,5,180,"Day B",{cap:5}), bb("ohp","Overhead press",3,5,150,"Day B",{cap:5}), bb("dl","Deadlift",1,5,180,"Day B",{cap:5})]},
   ]},
   {id:"ppl", name:"Push Pull Legs", blurb:"Classic split. One day each, then repeat.", days:[
-    {label:"Push", exercises:[bb("bench","Barbell bench",3,8,150,"Push"), bb("ohp","Barbell OHP",3,8,120,"Push"), bw("dip","Dips",3,8,90,"Push",{nocap:true}), bw("pu","Push-ups",3,15,75,"Push",{nocap:true})]},
-    {label:"Pull", exercises:[bb("dl","Deadlift",3,5,180,"Pull",{cap:5}), bb("row","Barbell row",3,8,120,"Pull"), bw("pullup","Pull-ups",3,6,120,"Pull",{nocap:true}), bb("curl","Dumbbell curl",3,10,60,"Pull",{cap:14})]},
-    {label:"Legs", exercises:[bb("squat","Barbell squat",3,8,180,"Legs"), bb("rdl","Barbell RDL",3,8,150,"Legs"), bw("lunge","Walking lunge",3,10,90,"Legs",{bilateral:true,cap:14}), bb("calf","Calf raise",3,12,45,"Legs",{cap:20})]},
+    {label:"Push", exercises:[bb("bench","Bench Press",3,8,150,"Push"), bb("ohp","Overhead press",3,8,120,"Push"), bw("dip","Dips",3,8,90,"Push",{nocap:true}), bw("pu","Push-ups",3,15,75,"Push",{nocap:true})]},
+    {label:"Pull", exercises:[bb("dl","Deadlift",3,5,180,"Pull",{cap:5}), bb("row","Bent over row",3,8,120,"Pull"), bw("pullup","Pull-ups",3,6,120,"Pull",{nocap:true}), bb("curl","Dumbbell curl",3,10,60,"Pull",{cap:14})]},
+    {label:"Legs", exercises:[bb("squat","Squat",3,8,180,"Legs"), bb("rdl","RDL",3,8,150,"Legs"), bw("lunge","Walking lunge",3,10,90,"Legs",{bilateral:true,cap:14}), bb("calf","Calf raise",3,12,45,"Legs",{cap:20})]},
   ]},
 ];
 
 const LIBRARY = [
   {group:"Squat / hinge", lifts:[
-    bb("squat","Barbell squat",3,8,120,"Add-on"), bb("front-squat","Front squat",3,6,150,"Add-on"),
+    bb("squat","Squat",3,8,120,"Add-on"), bb("front-squat","Front squat",3,6,150,"Add-on"),
     bb("goblet","Goblet squat",3,10,75,"Add-on",{cap:14}), bb("dl","Deadlift",3,5,180,"Add-on",{cap:5}),
-    bb("rdl","Barbell RDL",3,8,120,"Add-on"), bb("db-rdl","Dumbbell RDL",3,10,90,"Add-on",{cap:14}),
+    bb("rdl","RDL",3,8,120,"Add-on"), bb("db-rdl","Dumbbell RDL",3,10,90,"Add-on",{cap:14}),
     bb("single-rdl","Single-leg RDL",3,8,75,"Add-on",{bilateral:true,cap:12}), bb("good-morning","Good morning",3,8,90,"Add-on"),
     bb("kb-swing","Kettlebell swing",3,15,60,"Add-on",{cap:20}), bb("hip-thrust","Hip thrust",3,10,75,"Add-on",{cap:14}),
     bw("glute-bridge","Glute bridge",3,12,45,"Add-on",{cap:20}), bw("bext","Back extension",3,10,75,"Add-on",{cap:14}),
   ]},
   {group:"Push", lifts:[
-    bb("bench","Barbell bench",3,8,150,"Add-on"), bb("incline","Incline bench",3,8,120,"Add-on"),
+    bb("bench","Bench Press",3,8,150,"Add-on"), bb("incline","Incline bench",3,8,120,"Add-on"),
     bb("floor-press","Floor press",3,8,120,"Add-on"), bb("db-bench","Dumbbell bench",3,10,90,"Add-on"),
-    bb("ohp","Barbell OHP",3,8,90,"Add-on"), bb("db-ohp","Dumbbell OHP",3,8,90,"Add-on"),
+    bb("ohp","Overhead press",3,8,90,"Add-on"), bb("db-ohp","Dumbbell OHP",3,8,90,"Add-on"),
     bw("pu","Push-ups",3,15,75,"Add-on",{nocap:true}), bw("close-pu","Close-grip push-ups",3,12,75,"Add-on",{nocap:true}),
     bw("pike-pu","Pike push-up",3,8,75,"Add-on",{nocap:true}), bw("dip","Dips",3,8,90,"Add-on",{nocap:true}),
     bb("lateral-raise","Lateral raise",3,12,45,"Add-on",{cap:16}),
   ]},
   {group:"Pull", lifts:[
-    bb("row","Barbell row",3,8,90,"Add-on"), bb("db-row","Dumbbell row",3,10,75,"Add-on",{bilateral:true}),
+    bb("row","Bent over row",3,8,90,"Add-on"), bb("db-row","Dumbbell row",3,10,75,"Add-on",{bilateral:true}),
     bw("inverted-row","Inverted row",3,8,75,"Add-on",{nocap:true}), bw("pullup","Pull-ups",3,6,120,"Add-on",{nocap:true}),
     bw("chin","Chin-ups",3,8,120,"Add-on",{nocap:true}), bb("pulldown","Lat pulldown",3,10,75,"Add-on",{cap:14}),
     bw("band-pull","Band pull-apart",3,15,45,"Add-on",{cap:20}), bb("facepull","Face pulls",3,12,45,"Add-on",{cap:16}),
@@ -1083,7 +1083,7 @@ function logSession(){
         const stage = BENCH_STAGES[Math.min(idx, BENCH_STAGES.length-1)];
         const last = idx >= BENCH_STAGES.length - 1;
         const atTopWave = WAVE_REPS.indexOf(reps) === WAVE_REPS.length - 1;
-        // 3 clean at 3×12 with plate weight ≥ 10 kg → Barbell bench 3×6 @ 20 kg
+        // 3 clean at 3×12 with plate weight ≥ 10 kg → Bench Press 3×6 @ 20 kg
         if (!last && !stage.useBar && atTopWave && weight >= 10) {
           levelIndex = idx + 1;
           const nextStage = BENCH_STAGES[levelIndex];
