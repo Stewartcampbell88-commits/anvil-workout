@@ -122,7 +122,7 @@
 <input type="file" id="import-file" accept="application/json,.json" class="hide" />
 <script>
 const STORAGE = "anvil_app_v3";
-const APP_VERSION = "anvil-v29";
+const APP_VERSION = "anvil-v30";
 const SET_OPTS = [1,2,3,4,5];
 const REP_OPTS = [5,6,8,10,12,15,20,30,40];
 const WAVE_REPS = [6, 8, 10, 12];
@@ -165,6 +165,25 @@ function syncBenchExercise(ex){
   const stage = benchStage(ex);
   return {...ex, name: stage.name, note: stage.note};
 }
+
+const COSSACK_STAGES = [
+  { name:"Supported lateral squat", note:"Hold a rack or bench. Shallow sit to the side — heel down. Both sides.", startReps:6, startWeight:0, loaded:false },
+  { name:"Bodyweight Cossack (short)", note:"No hold. Short range to the side — stay upright, heel planted. Both sides.", startReps:6, startWeight:0, loaded:false },
+  { name:"Full-depth Cossack", note:"Sit deep to the side, other leg straight. Chest up, heel down. Both sides.", startReps:6, startWeight:0, loaded:false },
+  { name:"Goblet Cossack", note:"Light plate or KB at your chest. Full depth each side — add kg when 3×12 is clean.", startReps:6, startWeight:0, loaded:true },
+];
+function isCossackLadder(ex){
+  return !!ex?.cossackLadder;
+}
+function cossackStage(ex){
+  const idx = Math.min(COSSACK_STAGES.length - 1, Math.max(0, ex?.levelIndex ?? 0));
+  return COSSACK_STAGES[idx];
+}
+function syncCossackExercise(ex){
+  if (!isCossackLadder(ex)) return ex;
+  const stage = cossackStage(ex);
+  return {...ex, name: stage.name, note: stage.note};
+}
 function isPlankSeconds(ex){
   // Heave ladder: only Dead hang is timed — stage notes for negatives mention "seconds" of lowering, not hold time
   if (isHeaveLadder(ex)) return !!heaveStage(ex).seconds;
@@ -175,6 +194,7 @@ function usesAmrap(ex){
   if (!ex || (ex.sets ?? 0) < 2) return false;
   if (isPlankSeconds(ex)) return false;
   if (isHeaveLadder(ex) && (ex.levelIndex ?? 0) < HEAVE_STAGES.length - 1) return false;
+  if (isCossackLadder(ex) && (ex.levelIndex ?? 0) < COSSACK_STAGES.length - 1) return false;
   return true;
 }
 function isWaveProgram(programId, ex){
@@ -224,6 +244,8 @@ function workingWeightFor(id, sessionExs, progress){
 /** Gate a would-be kg bump. Equality with ceiling is OK; exceeding is held. Skips heave ladders. */
 function balanceKgHold(programId, ex, nextWeight, sessionExs, progress){
   if (!ex || isHeaveLadder(ex)) return null;
+  // Cossack ladder: skip early stages; only gate final stage when loaded
+  if (isCossackLadder(ex) && ((ex.levelIndex ?? 0) < COSSACK_STAGES.length - 1 || !(Number(ex.weight) > 0))) return null;
   const ceilId = ceilingFor(programId, ex.id, sessionExs, progress);
   if (!ceilId) return null;
   const ceilW = workingWeightFor(ceilId, sessionExs, progress);
@@ -293,13 +315,16 @@ function bw(id,name,sets,reps,rest,block,extra={}) {
 }
 
 const PROGRAMS = [
-  {id:"anvil", name:"ANVIL", blurb:"2× week A/B. Wave 6→8→10→12 then +2.5kg. Heaves on B.", days:[
+  {id:"anvil", name:"ANVIL", blurb:"2× week A/B. Wave 6→8→10→12 then +2.5kg. Cossack ladder on A; heaves on B.", days:[
     {label:"A", exercises:[
       bb("squat","Squat",3,8,120,"Day A"),
       bb("bench","Bench Press",3,8,120,"Day A"),
       bb("row","Bent over row",3,8,90,"Day A"),
       bw("bext","Back extension",3,10,75,"Day A",{cap:14}),
-      bw("abd","Side-lying abduction",3,12,45,"Day A",{cap:16,bilateral:true,note:"Extra on the right"}),
+      bw("cossack", COSSACK_STAGES[0].name, 3, COSSACK_STAGES[0].startReps, 45, "Day A", {
+        bilateral:true, cossackLadder:true, levels: COSSACK_STAGES.map(s=>s.name), levelIndex:0,
+        note: COSSACK_STAGES[0].note
+      }),
       bb("sgm","Seated good morning",3,8,90,"Day A",{cap:12,note:"Bar on upper back, sit tall, hinge from the hips. Soft knees."}),
     ]},
     {label:"B", exercises:[
@@ -480,6 +505,21 @@ function applyProgress(exs, progress, programId){
       }
       next = syncBenchExercise(next);
     }
+    // Cossack ladder (ANVIL Day A)
+    if (ex.cossackLadder || next.cossackLadder) {
+      next = {
+        ...next,
+        cossackLadder: true,
+        bilateral: true,
+        levels: (ex.levels?.length ? ex.levels : next.levels?.length ? next.levels : COSSACK_STAGES.map(s=>s.name)),
+      };
+      if (p && p.levelIndex != null && Number.isFinite(Number(p.levelIndex))) {
+        next = {...next, levelIndex: Math.min(COSSACK_STAGES.length-1, Math.max(0, Number(p.levelIndex)))};
+      } else if (!p) {
+        next = {...next, levelIndex: 0, reps: COSSACK_STAGES[0].startReps, weight: COSSACK_STAGES[0].startWeight};
+      }
+      next = syncCossackExercise(next);
+    }
     if ((waveProg || String(next.id||"").startsWith("em-") || String(next.id||"").startsWith("tp-")) && !isPlankSeconds(next) && next.reps != null && !WAVE_REPS.includes(next.reps)) {
       next = {...next, reps: snapWaveRep(next.reps)};
     }
@@ -495,7 +535,7 @@ function hydrate(raw){
     next.push({
       id:e.id, name:e.name, sets, rest:e.rest??90, weight:e.weight??0, reps:e.reps??8,
       bw:e.bw, nocap:e.nocap, cap:e.cap, block:e.block??"Session", bilateral:e.bilateral, note:e.note,
-      heaveLadder:e.heaveLadder, benchLadder:e.benchLadder, levels:e.levels, levelIndex: e.levels?.length ? (e.levelIndex??0) : e.levelIndex,
+      heaveLadder:e.heaveLadder, benchLadder:e.benchLadder, cossackLadder:e.cossackLadder, levels:e.levels, levelIndex: e.levels?.length ? (e.levelIndex??0) : e.levelIndex,
       streak:e.streak??0, failStreak:e.failStreak??0, skipped:e.skipped??false,
       setsLog: e.setsLog && e.setsLog.length===sets ? e.setsLog : blankSets(sets),
     });
@@ -777,15 +817,41 @@ function load(){
       const seedIds = new Set(seeded.map(e => e.id));
       if (!baseExs.some(e => seedIds.has(e.id))) baseExs = seeded;
     }
-    // Preserve heaveLadder / benchLadder / levels from seed when rehydrating saved sessions
+    // Preserve heaveLadder / benchLadder / cossackLadder / levels from seed when rehydrating saved sessions
     baseExs = baseExs.map(ex => {
       const seed = seedById[ex.id];
       if (!seed) return ex;
       let out = ex;
       if (seed.heaveLadder) out = {...out, heaveLadder:true, levels: seed.levels};
       if (seed.benchLadder) out = {...out, benchLadder:true, levels: seed.levels};
+      if (seed.cossackLadder) out = {...out, cossackLadder:true, bilateral:true, levels: seed.levels};
       return out;
     });
+    // ANVIL Day A v30: programmed abd → cossack ladder (keep Add-on abd if no seed cossack)
+    if (program.id === "anvil" && seedById["cossack"] && !baseExs.some(e => e.id === "cossack")) {
+      let swapped = false;
+      baseExs = baseExs.map(ex => {
+        if (!swapped && ex.id === "abd") {
+          swapped = true;
+          return toExercise({...seedById["cossack"]});
+        }
+        return ex;
+      });
+      if (!swapped) {
+        // Insert cossack in seed order if abd was already removed
+        const seeded = seedProgram(program.id, dayIndex);
+        const orderIds = seeded.map(e => e.id);
+        const have = new Set(baseExs.map(e => e.id));
+        for (const sid of orderIds) {
+          if (!have.has(sid) && sid === "cossack") {
+            const idx = orderIds.indexOf(sid);
+            const insertAt = Math.min(idx, baseExs.length);
+            baseExs = [...baseExs.slice(0, insertAt), toExercise({...seedById["cossack"]}), ...baseExs.slice(insertAt)];
+            break;
+          }
+        }
+      }
+    }
     state = {
       programId: program.id,
       dayIndex,
@@ -914,6 +980,10 @@ function bumpLevel(ei, d){
     if (isBenchLadder(updated)) {
       const stage = benchStage(updated);
       updated = syncBenchExercise({...updated, reps: stage.startReps, weight: stage.startWeight, streak: 0, failStreak: 0});
+    }
+    if (isCossackLadder(updated)) {
+      const stage = cossackStage(updated);
+      updated = syncCossackExercise({...updated, reps: stage.startReps, weight: stage.startWeight ?? 0, streak: 0, failStreak: 0});
     }
     return updated;
   });
@@ -1078,6 +1148,25 @@ function logSession(){
             notes.push(`${ex.name}: ${step.note}`);
           }
         }
+      } else if (isCossackLadder(ex)) {
+        const idx = levelIndex;
+        const last = idx >= COSSACK_STAGES.length - 1;
+        const atGraduatePoint = WAVE_REPS.indexOf(reps) === WAVE_REPS.length - 1;
+        if (atGraduatePoint && !last) {
+          levelIndex = idx + 1;
+          const nextStage = COSSACK_STAGES[levelIndex];
+          reps = nextStage.startReps; weight = nextStage.startWeight ?? 0; streak = 0;
+          notes.push(`${ex.name}: graduated → ${nextStage.name}`);
+        } else {
+          const step = nextWaveStep(reps, weight);
+          if (step.weight > weight) {
+            const r = takeKgBump(ex, step.weight, step.reps, 0, `${ex.name}: ${step.note}`);
+            weight = r.weight; reps = r.reps; streak = r.streak;
+          } else {
+            reps = step.reps; weight = step.weight; streak = 0;
+            notes.push(`${ex.name}: ${step.note}`);
+          }
+        }
       } else if (isBenchLadder(ex)) {
         const idx = levelIndex;
         const stage = BENCH_STAGES[Math.min(idx, BENCH_STAGES.length-1)];
@@ -1120,6 +1209,7 @@ function logSession(){
       let out = {...ex, streak, failStreak:0, reps, weight, levelIndex, setsLog: blankSets(ex.sets)};
       if (isHeaveLadder(out)) out = syncHeaveExercise(out);
       if (isBenchLadder(out)) out = syncBenchExercise(out);
+      if (isCossackLadder(out)) out = syncCossackExercise(out);
       return out;
     }
     let {reps, weight} = ex;
@@ -1710,7 +1800,7 @@ function render(){
       <button class="primary" data-act="log">Log session</button>
       <button data-act="reset">${I.reset} Reset</button>
     </div>
-    <p class="foot">Tap the big number to complete that set (tap again clears). − / + dial that set’s reps — going below the target marks it failed (red). Leave a lift blank or skip — it won’t count. Last set AMRAP on most lifts — hit target+2 (or more) to add 2.5kg next time. Timed holds and early heave stages skip AMRAP. Ember / Anvil / Titan: 3 clean at a rung climbs 6→8→10→12, then 3×6 +2.5kg (plank waves 20→30→20s, no kg) — AMRAP load bump skips the wave climb that session. Heaves ladder: hang → feet assist → negatives → full (auto-graduate after wave). Titan plate bench: 3 clean at 3×12 @ ≥10kg → barbell 3×6 @ 20kg (AMRAP at 12 @ ≥10kg also graduates). Other programs: 3 clean → +2 reps (or +2.5 kg at cap). 3 short sessions → reset week (drop kg first if loaded).</p>
+    <p class="foot">Tap the big number to complete that set (tap again clears). − / + dial that set’s reps — going below the target marks it failed (red). Leave a lift blank or skip — it won’t count. Last set AMRAP on most lifts — hit target+2 (or more) to add 2.5kg next time. Timed holds and early heave stages skip AMRAP. Ember / Anvil / Titan: 3 clean at a rung climbs 6→8→10→12, then 3×6 +2.5kg (plank waves 20→30→20s, no kg) — AMRAP load bump skips the wave climb that session. Heaves ladder: hang → feet assist → negatives → full (auto-graduate after wave). ANVIL Cossack ladder: supported → short → full depth → goblet (auto-graduate after wave; kg on final). Titan plate bench: 3 clean at 3×12 @ ≥10kg → barbell 3×6 @ 20kg (AMRAP at 12 @ ≥10kg also graduates). Other programs: 3 clean → +2 reps (or +2.5 kg at cap). 3 short sessions → reset week (drop kg first if loaded).</p>
     ${balanceHold}
     ${bodyweight}
     ${settings}
