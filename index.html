@@ -15,7 +15,7 @@
     :root {
       --bg:#0d0d0d; --surface:#171717; --inset:#141414; --fg:#f3f3f3; --muted:#9a9a9a;
       --primary:#ff4d1c; --primary-fg:#fff; --done:#2ecc71; --miss:#e67e22; --go:#27ae60;
-      --warn:#f1c40f; --border:#2a2a2a;
+      --warn:#f1c40f; --fail:#e74c3c; --border:#2a2a2a;
       --sans: ui-sans-serif, system-ui, "Segoe UI", sans-serif;
       --display: "Arial Narrow", ui-sans-serif, sans-serif;
     }
@@ -112,6 +112,21 @@
     .progress-select { width:100%; min-height:2.75rem; border-radius:0.75rem; padding:0 0.75rem; font:inherit; font-weight:600; background:var(--border); color:var(--fg); border:0; margin-top:0.5rem; }
     svg.chart-svg { width:100%; height:auto; display:block; stroke:none; fill:none; }
     .chart-empty { color:var(--muted); font-size:0.875rem; margin:0.75rem 0 0; }
+
+    .card.collapsed { padding:0.75rem 1rem; }
+    .card.collapsed.pass { box-shadow:0 0 0 1px var(--done); }
+    .card.collapsed.fail { box-shadow:0 0 0 1px var(--fail); }
+    .ex-toggle { width:100%; display:flex; align-items:center; justify-content:space-between; gap:0.75rem; text-align:left; min-height:2.5rem; padding:0; border-radius:0.5rem; }
+    .ex-toggle h2 { margin:0; font-size:1.125rem; line-height:1.3; }
+    .ex-status { width:0.7rem; height:0.7rem; border-radius:999px; flex-shrink:0; }
+    .ex-status.pass { background:var(--done); }
+    .ex-status.fail { background:var(--fail); }
+    .ex-status.skipped { background:var(--muted); }
+    .card.ex-flash { animation:ex-flash 0.85s ease; }
+    @keyframes ex-flash {
+      0%,100% { box-shadow:0 0 0 1px rgb(243 243 243 / 0.08); }
+      35% { box-shadow:0 0 0 2px var(--primary); }
+    }
   </style>
 </head>
 <body>
@@ -122,7 +137,7 @@
 <input type="file" id="import-file" accept="application/json,.json" class="hide" />
 <script>
 const STORAGE = "anvil_app_v3";
-const APP_VERSION = "anvil-v31";
+const APP_VERSION = "anvil-v32";
 const SET_OPTS = [1,2,3,4,5];
 const REP_OPTS = [5,6,8,10,12,15,20,30,40];
 const WAVE_REPS = [6, 8, 10, 12];
@@ -547,6 +562,59 @@ function currentIndex(exs){
   const i = exs.findIndex(e => !e.skipped && (e.setsLog||[]).some(s => !s.ok && !s.miss));
   return i < 0 ? exs.length-1 : i;
 }
+
+function exerciseResolved(ex){
+  if (!ex) return true;
+  if (ex.skipped) return true;
+  const log = ex.setsLog || [];
+  return log.length > 0 && log.every(s => s.ok || s.miss);
+}
+function exercisePassed(ex){
+  if (!ex || ex.skipped) return false;
+  const log = ex.setsLog || [];
+  return log.length > 0 && log.every(s => s.ok && !s.miss);
+}
+function exerciseFailed(ex){
+  if (!ex || ex.skipped) return false;
+  return (ex.setsLog || []).some(s => s.miss);
+}
+function ensureExpandedEx(){
+  if (!(ui.expandedEx instanceof Set)) ui.expandedEx = new Set();
+  return ui.expandedEx;
+}
+function clearExpandedEx(){ ui.expandedEx = new Set(); }
+function isExExpanded(ex){
+  if (!ex || ex.skipped) return false;
+  if (!exerciseResolved(ex)) return true;
+  return ensureExpandedEx().has(ex.id);
+}
+function toggleExExpand(ei){
+  const ex = state.exercises[ei];
+  if (!ex || ex.skipped || !exerciseResolved(ex)) return;
+  const set = ensureExpandedEx();
+  if (set.has(ex.id)) set.delete(ex.id);
+  else set.add(ex.id);
+  render();
+}
+function nextIncompleteIndex(){
+  return state.exercises.findIndex(e => !e.skipped && !exerciseResolved(e));
+}
+function scheduleJumpToNextIncomplete(){
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const ni = nextIncompleteIndex();
+      const el = ni >= 0
+        ? document.getElementById("ex-" + state.exercises[ni].id)
+        : document.getElementById("log-session");
+      if (!el) return;
+      el.scrollIntoView({ behavior:"smooth", block:"center" });
+      if (ni >= 0) {
+        el.classList.add("ex-flash");
+        setTimeout(() => el.classList.remove("ex-flash"), 900);
+      }
+    });
+  });
+}
 function fmtTime(sec){ const s=Math.max(0,Math.floor(sec)); return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`; }
 function targetLabel(ex){
   const unit = isPlankSeconds(ex) ? "s" : "";
@@ -767,7 +835,7 @@ let state = {
   soundVolume: 0.7,
   cuePack: "chime",
 };
-let ui = { remain:0, running:false, isGo:false, panel:"none", settingsTab:"program", pending:null, pickSets:3, pickReps:8, installHint:false, installed:false, toastTimer:null, swReg:null, updateReady:false, updateChecking:false, refreshing:false, appVersion: APP_VERSION, progressLiftId:null, bwDraftKg:null, bwLinkSession:false, pendingHolds:null };
+let ui = { remain:0, running:false, isGo:false, panel:"none", settingsTab:"program", pending:null, pickSets:3, pickReps:8, installHint:false, installed:false, toastTimer:null, swReg:null, updateReady:false, updateChecking:false, refreshing:false, appVersion: APP_VERSION, progressLiftId:null, bwDraftKg:null, bwLinkSession:false, pendingHolds:null, expandedEx:new Set() };
 let remainVal = 0, lastCue = -1, tick = null, deferredInstall = null;
 try {
   ui.installed = window.matchMedia("(display-mode: standalone)").matches || Boolean(navigator.standalone) || /ANVIL-APP/.test(navigator.userAgent) || location.hostname === "appassets.androidplatform.net";
@@ -950,6 +1018,7 @@ function importBackup(){
 }
 
 function markSet(ei, si){
+  const wasResolved = exerciseResolved(state.exercises[ei]);
   state.exercises = state.exercises.map((ex,i) => {
     if (i!==ei) return ex;
     const log = ex.setsLog.map((s,j) => {
@@ -960,7 +1029,11 @@ function markSet(ei, si){
     });
     return {...ex, skipped:false, setsLog:log};
   });
+  const ex = state.exercises[ei];
+  const justFinished = !wasResolved && exerciseResolved(ex) && !ex.skipped;
+  if (justFinished) ensureExpandedEx().delete(ex.id);
   save(); render();
+  return justFinished;
 }
 function bumpWeight(ei, d){
   state.exercises = state.exercises.map((ex,i) => i===ei ? {...ex, weight: Math.max(0, +(ex.weight+d).toFixed(1))} : ex);
@@ -996,6 +1069,7 @@ function skipExercise(ei){
 }
 function resetChecks(){
   state.exercises = state.exercises.map(ex => ({...ex, skipped:false, setsLog: blankSets(ex.sets)}));
+  clearExpandedEx();
   save(); render();
 }
 function setProgram(id, dayIndex=0){
@@ -1003,6 +1077,7 @@ function setProgram(id, dayIndex=0){
   const day = Math.min(Math.max(0, dayIndex), program.days.length-1);
   const progress = captureProgress(state.exercises, state.liftProgress);
   state = {...state, programId: program.id, dayIndex: day, liftProgress: progress, exercises: applyProgress(seedProgram(program.id, day), progress, program.id)};
+  clearExpandedEx();
   save(); render();
 }
 function setDay(dayIndex){
@@ -1012,6 +1087,7 @@ function setDay(dayIndex){
   state.dayIndex = day;
   state.liftProgress = progress;
   state.exercises = applyProgress(seedProgram(state.programId, day), progress, state.programId);
+  clearExpandedEx();
   save(); render();
 }
 function addExercise(def){
@@ -1350,6 +1426,7 @@ function adjustRest(d){
 function bumpSetReps(ei, si, delta){
   const ex0 = state.exercises[ei];
   if (!ex0 || ex0.skipped) return;
+  const wasResolved = exerciseResolved(ex0);
   state.exercises = state.exercises.map((ex,i) => {
     if (i!==ei) return ex;
     const target = ex.reps;
@@ -1364,14 +1441,19 @@ function bumpSetReps(ei, si, delta){
     });
     return {...ex, setsLog:log};
   });
+  const ex = state.exercises[ei];
+  const justFinished = !wasResolved && exerciseResolved(ex) && !ex.skipped;
+  if (justFinished) ensureExpandedEx().delete(ex.id);
   save(); render();
+  if (justFinished) scheduleJumpToNextIncomplete();
 }
 function onMark(ei, si){
   unlockAudio();
   const before = state.exercises[ei].setsLog[si];
   const starting = !before.ok && !before.miss;
-  markSet(ei, si);
+  const justFinished = markSet(ei, si);
   if (starting) startRest(state.exercises[ei].rest);
+  if (justFinished) scheduleJumpToNextIncomplete();
 }
 function onLog(){
   const startedOpen = state.exercises.some(ex => {
@@ -1389,6 +1471,7 @@ function onLog(){
     setDay((state.dayIndex + 1) % program.days.length);
   }
   toast("Session logged", notes.slice(0,3).join(" · "));
+  clearExpandedEx();
   stopRest();
   if (ui.pendingHolds?.length) {
     ui.panel = "balance-hold";
@@ -1561,6 +1644,33 @@ function render(){
     const showTag = ex.block !== lastBlock;
     lastBlock = ex.block;
     const isActive = ei===ci && !ex.skipped;
+    const expanded = isExExpanded(ex);
+    const resolved = exerciseResolved(ex);
+    const passed = exercisePassed(ex);
+    const failed = exerciseFailed(ex);
+    const statusCls = ex.skipped ? "skipped" : passed ? "pass" : failed ? "fail" : "";
+    const tag = showTag?`<p class="block">${esc(ex.block)}</p>`:"";
+
+    if (!expanded) {
+      if (ex.skipped) {
+        return `${tag}
+      <article class="card collapsed skipped" id="ex-${esc(ex.id)}">
+        <div class="row" style="align-items:center">
+          <h2 class="muted" style="margin:0">${esc(ex.name)}</h2>
+          <button class="skip on" data-act="skip" data-i="${ei}">Unskip</button>
+        </div>
+      </article>`;
+      }
+      const statusLab = passed ? "passed" : failed ? "failed" : "done";
+      return `${tag}
+      <article class="card collapsed ${statusCls}" id="ex-${esc(ex.id)}">
+        <button type="button" class="ex-toggle" data-act="toggle-ex" data-i="${ei}" aria-expanded="false" aria-label="${esc(ex.name)}, ${statusLab}. Expand">
+          <h2>${esc(ex.name)}</h2>
+          <span class="ex-status ${statusCls}" aria-hidden="true"></span>
+        </button>
+      </article>`;
+    }
+
     const tight = ex.sets > 3;
     const loggedCue = isActive && ui.remain>0 && ui.remain<=3 && !ui.isGo ? String(ui.remain) : (isActive && ui.isGo ? "GO" : "");
     const remainText = isActive ? timeText : fmtTime(ex.rest);
@@ -1595,14 +1705,23 @@ function render(){
         </div>
       </div>`;
     }).join("")}</div>`;
-    return `${showTag?`<p class="block">${esc(ex.block)}</p>`:""}
-      <article class="card${isActive?" active":""}${ex.skipped?" skipped":""}" id="ex-${esc(ex.id)}">
-        <div class="row">
-          <div>
+    const titleBlock = resolved && !ex.skipped
+      ? `<div style="min-width:0;flex:1">
+            <button type="button" class="ex-toggle" data-act="toggle-ex" data-i="${ei}" aria-expanded="true" aria-label="${esc(ex.name)}. Collapse">
+              <h2>${esc(ex.name)}</h2>
+              <span class="ex-status ${statusCls}" aria-hidden="true"></span>
+            </button>
+            ${ex.note?`<p class="note">${esc(ex.note)}</p>`:""}
+          </div>`
+      : `<div style="min-width:0;flex:1">
             <h2>${esc(ex.name)}</h2>
             ${ex.note?`<p class="note">${esc(ex.note)}</p>`:""}
             ${ex.skipped?`<p class="note">Skipped — won’t count</p>`:""}
-          </div>
+          </div>`;
+    return `${tag}
+      <article class="card${isActive?" active":""}${ex.skipped?" skipped":""}${resolved && !ex.skipped ? " " + statusCls : ""}" id="ex-${esc(ex.id)}">
+        <div class="row">
+          ${titleBlock}
           <p class="meta">${esc(targetLabel(ex))}<br>${ex.streak}/3 clean · ${ex.failStreak}/3 no-rep${amrap?`<br><span style="opacity:.7;font-size:.65rem">Last set AMRAP · +2 → next kg</span>`:""}</p>
         </div>
         <div class="weight">${load}</div>
@@ -1801,7 +1920,7 @@ function render(){
     ${remove}
     ${add}
     <div class="split">
-      <button class="primary" data-act="log">Log session</button>
+      <button class="primary" id="log-session" data-act="log">Log session</button>
       <button data-act="reset">${I.reset} Reset</button>
     </div>
     <p class="foot">Tap the big number to complete that set (tap again clears). − / + dial that set’s reps — going below the target marks it failed (red). Leave a lift blank or skip — it won’t count. Last set AMRAP on most lifts — hit target+2 (or more) to add 2.5kg next time. Timed holds and early heave stages skip AMRAP. Ember / Anvil / Titan: 3 clean at a rung climbs 6→8→10→12, then 3×6 +2.5kg (plank waves 20→30→20s, no kg) — AMRAP load bump skips the wave climb that session. Heaves ladder: hang → feet assist → negatives → full (auto-graduate after wave). ANVIL Cossack ladder: supported → short → full depth → goblet (auto-graduate after wave; kg on final). Titan plate bench: 3 clean at 3×12 @ ≥10kg → barbell 3×6 @ 20kg (AMRAP at 12 @ ≥10kg also graduates). Other programs: 3 clean → +2 reps (or +2.5 kg at cap). 3 short sessions → reset week (drop kg first if loaded).</p>
@@ -1836,6 +1955,9 @@ document.getElementById("app").addEventListener("click", (e) => {
   else if (act==="set-rep") {
     e.stopPropagation();
     bumpSetReps(+btn.dataset.i, +btn.dataset.s, +btn.dataset.d);
+  }
+  else if (act==="toggle-ex") {
+    toggleExExpand(+btn.dataset.i);
   }
   else if (act==="weight") bumpWeight(+btn.dataset.i, +btn.dataset.d);
   else if (act==="level") bumpLevel(+btn.dataset.i, +btn.dataset.d);
