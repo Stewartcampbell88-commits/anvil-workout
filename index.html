@@ -122,7 +122,7 @@
 <input type="file" id="import-file" accept="application/json,.json" class="hide" />
 <script>
 const STORAGE = "anvil_app_v3";
-const APP_VERSION = "anvil-v30";
+const APP_VERSION = "anvil-v31";
 const SET_OPTS = [1,2,3,4,5];
 const REP_OPTS = [5,6,8,10,12,15,20,30,40];
 const WAVE_REPS = [6, 8, 10, 12];
@@ -1384,6 +1384,10 @@ function onLog(){
   const anyWork = state.exercises.some(ex => !ex.skipped && ex.setsLog.some(s => s.ok || s.miss));
   if (!anyWork) { toast("Tick a set first — blank lifts are skipped"); return; }
   const notes = logSession();
+  const program = getProgram(state.programId);
+  if (program.days.length > 1) {
+    setDay((state.dayIndex + 1) % program.days.length);
+  }
   toast("Session logged", notes.slice(0,3).join(" · "));
   stopRest();
   if (ui.pendingHolds?.length) {
