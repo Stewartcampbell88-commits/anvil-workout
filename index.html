@@ -127,6 +127,26 @@
       0%,100% { box-shadow:0 0 0 1px rgb(243 243 243 / 0.08); }
       35% { box-shadow:0 0 0 2px var(--primary); }
     }
+
+    .tab-bar { position:fixed; left:0; right:0; bottom:0; z-index:25; display:flex; gap:0.375rem; padding:0.5rem 1rem max(0.5rem, env(safe-area-inset-bottom)); background:var(--bg); border-top:1px solid var(--border); max-width:28rem; margin:0 auto; }
+    .tab-bar button { flex:1; min-height:2.75rem; border-radius:0.75rem; font-size:0.875rem; font-weight:700; background:var(--border); display:flex; align-items:center; justify-content:center; gap:0.4rem; color:var(--fg); }
+    .tab-bar button.on { background:var(--primary); color:var(--primary-fg); }
+    .tab-bar svg { width:1rem; height:1rem; }
+    main.has-tabs { padding-bottom: max(5.5rem, calc(env(safe-area-inset-bottom) + 4.5rem)); }
+    .danger { background:var(--fail); color:#fff; }
+    .walk-cta { width:100%; min-height:3.5rem; border-radius:1rem; font-size:1.25rem; font-weight:700; margin-top:0.75rem; display:flex; align-items:center; justify-content:center; }
+    .walk-week { display:flex; gap:0.375rem; margin-top:0.75rem; }
+    .walk-day { flex:1; min-height:2.75rem; border-radius:0.75rem; background:var(--border); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:0.15rem; padding:0.35rem 0.15rem; }
+    .walk-day.on { background:var(--done); color:var(--bg); }
+    .walk-day .wd { font-size:0.65rem; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; opacity:0.75; line-height:1; }
+    .walk-day .wd-dot { width:0.45rem; height:0.45rem; border-radius:999px; background:currentColor; opacity:0.35; }
+    .walk-day.on .wd-dot { opacity:1; }
+    .walk-hist { display:grid; gap:0.375rem; margin-top:0.75rem; }
+    .walk-row { display:flex; align-items:center; justify-content:space-between; gap:0.75rem; min-height:3rem; background:var(--inset); border-radius:0.75rem; padding:0.5rem 0.75rem; }
+    .walk-row strong { font-size:0.9375rem; font-weight:700; }
+    .walk-geo { color:var(--warn); font-size:0.875rem; margin:0.75rem 0 0; text-align:center; }
+    .walk-readout { text-align:center; padding:1.5rem 1rem; }
+    .walk-readout .big { margin:0.25rem 0 0; }
   </style>
 </head>
 <body>
@@ -137,7 +157,7 @@
 <input type="file" id="import-file" accept="application/json,.json" class="hide" />
 <script>
 const STORAGE = "anvil_app_v3";
-const APP_VERSION = "anvil-v33";
+const APP_VERSION = "anvil-v34";
 const CUE_LOUDNESS = 2.4;
 const CUE_MAX_GAIN = 0.95;
 const SET_OPTS = [1,2,3,4,5];
@@ -644,7 +664,282 @@ const I = {
   sound: `<svg viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a9 9 0 0 1 0 14"/></svg>`,
   settings: `<svg viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>`,
   x: `<svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`,
+  walk: `<svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><path d="M10 22l2-7 2 3 3 2"/><path d="M9 10l3 2 2-3 3 1"/></svg>`,
+  workout: `<svg viewBox="0 0 24 24"><path d="M6.5 6.5v11"/><path d="M17.5 6.5v11"/><path d="M4 9v6"/><path d="M20 9v6"/><path d="M6.5 12h11"/></svg>`,
 };
+
+
+const WALK_STORAGE = "anvil_walks_v1";
+const WALK_MIN_SAVE_SEC = 30;
+const WALK_MIN_MOVE_M = 6;
+const WALK_MAX_ACC_M = 50;
+let walks = [];
+let walk = {
+  active: false,
+  startedAt: null,
+  elapsedSec: 0,
+  distanceKm: 0,
+  watchId: null,
+  lastPos: null,
+  geoMsg: "",
+  wakeLock: null,
+  tick: null,
+};
+
+function loadWalks(){
+  try {
+    const raw = JSON.parse(localStorage.getItem(WALK_STORAGE) || "[]");
+    walks = Array.isArray(raw) ? raw.filter(w => w && typeof w.date === "string" && typeof w.durationSec === "number") : [];
+  } catch { walks = []; }
+}
+function saveWalks(){
+  try { localStorage.setItem(WALK_STORAGE, JSON.stringify(walks)); } catch {}
+}
+
+function fmtWalkDuration(sec){
+  const s = Math.max(0, Math.floor(sec));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const r = s % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2,"0")}:${String(r).padStart(2,"0")}`;
+  return `${m}:${String(r).padStart(2,"0")}`;
+}
+
+function brisbaneTodayISO(){
+  try {
+    return new Intl.DateTimeFormat("en-CA", { timeZone:"Australia/Brisbane", year:"numeric", month:"2-digit", day:"2-digit" }).format(new Date());
+  } catch {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  }
+}
+function brisbaneWeekdayShort(d = new Date()){
+  try {
+    return new Intl.DateTimeFormat("en-US", { timeZone:"Australia/Brisbane", weekday:"short" }).format(d);
+  } catch {
+    return ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getDay()];
+  }
+}
+function mondayOfThisWeekISO(){
+  const today = brisbaneTodayISO();
+  const wd = brisbaneWeekdayShort();
+  const idx = { Sun:0, Mon:1, Tue:2, Wed:3, Thu:4, Fri:5, Sat:6 }[wd] ?? 1;
+  const fromMon = (idx + 6) % 7;
+  const [y, m, d] = today.split("-").map(Number);
+  const utc = Date.UTC(y, m - 1, d) - fromMon * 86400000;
+  const t = new Date(utc);
+  return `${t.getUTCFullYear()}-${String(t.getUTCMonth()+1).padStart(2,"0")}-${String(t.getUTCDate()).padStart(2,"0")}`;
+}
+function thisWeekISOs(){
+  const mon = mondayOfThisWeekISO();
+  const [y, m, d] = mon.split("-").map(Number);
+  const base = Date.UTC(y, m - 1, d);
+  return Array.from({ length:7 }, (_, i) => {
+    const t = new Date(base + i * 86400000);
+    return `${t.getUTCFullYear()}-${String(t.getUTCMonth()+1).padStart(2,"0")}-${String(t.getUTCDate()).padStart(2,"0")}`;
+  });
+}
+function haversineKm(a, b){
+  const R = 6371;
+  const toRad = (x) => x * Math.PI / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lon - a.lon);
+  const lat1 = toRad(a.lat), lat2 = toRad(b.lat);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+async function acquireWakeLock(){
+  try {
+    if (navigator.wakeLock && navigator.wakeLock.request) {
+      walk.wakeLock = await navigator.wakeLock.request("screen");
+      walk.wakeLock.addEventListener("release", () => {});
+    }
+  } catch {}
+}
+async function releaseWakeLock(){
+  try { await walk.wakeLock?.release(); } catch {}
+  walk.wakeLock = null;
+}
+
+function updateWalkLiveDom(){
+  document.querySelectorAll("[data-walk-time]").forEach((el) => { el.textContent = fmtWalkDuration(walk.elapsedSec); });
+  document.querySelectorAll("[data-walk-dist]").forEach((el) => { el.textContent = `${walk.distanceKm.toFixed(2)} km`; });
+}
+
+function onWalkTick(){
+  if (!walk.active || !walk.startedAt) return;
+  walk.elapsedSec = Math.max(0, Math.floor((Date.now() - walk.startedAt) / 1000));
+  updateWalkLiveDom();
+}
+
+function onWalkPosition(pos){
+  if (!walk.active) return;
+  const coords = pos?.coords;
+  if (!coords) return;
+  const acc = Number(coords.accuracy);
+  if (Number.isFinite(acc) && acc > WALK_MAX_ACC_M) return;
+  const next = { lat: coords.latitude, lon: coords.longitude };
+  if (!Number.isFinite(next.lat) || !Number.isFinite(next.lon)) return;
+  if (walk.lastPos) {
+    const km = haversineKm(walk.lastPos, next);
+    const meters = km * 1000;
+    if (meters >= WALK_MIN_MOVE_M) {
+      walk.distanceKm += km;
+      walk.lastPos = next;
+      updateWalkLiveDom();
+    }
+  } else {
+    walk.lastPos = next;
+  }
+  if (walk.geoMsg) {
+    walk.geoMsg = "";
+    if (ui.mainTab === "walk") render();
+  }
+}
+
+function onWalkGeoError(err){
+  if (!walk.active) return;
+  if (err && (err.code === 1 || /denied/i.test(String(err.message || "")))) {
+    walk.geoMsg = "Allow location for distance";
+  } else {
+    walk.geoMsg = "Location unavailable — time still tracks";
+  }
+  if (ui.mainTab === "walk") render();
+}
+
+function startWalkSession(){
+  if (walk.active) return;
+  walk.active = true;
+  walk.startedAt = Date.now();
+  walk.elapsedSec = 0;
+  walk.distanceKm = 0;
+  walk.lastPos = null;
+  walk.geoMsg = "";
+  if (walk.tick) clearInterval(walk.tick);
+  walk.tick = setInterval(onWalkTick, 250);
+  acquireWakeLock();
+  if (navigator.geolocation) {
+    try {
+      walk.watchId = navigator.geolocation.watchPosition(onWalkPosition, onWalkGeoError, {
+        enableHighAccuracy: true,
+        maximumAge: 2000,
+        timeout: 15000,
+      });
+    } catch {
+      walk.geoMsg = "Location unavailable — time still tracks";
+    }
+  } else {
+    walk.geoMsg = "Location unavailable — time still tracks";
+  }
+}
+
+function stopWalkSession(){
+  if (!walk.active) return;
+  onWalkTick();
+  const durationSec = walk.elapsedSec;
+  const distanceKm = Math.round(walk.distanceKm * 100) / 100;
+  const startedAt = walk.startedAt ? new Date(walk.startedAt).toISOString() : new Date().toISOString();
+  const date = brisbaneTodayISO();
+
+  if (walk.watchId != null && navigator.geolocation) {
+    try { navigator.geolocation.clearWatch(walk.watchId); } catch {}
+  }
+  walk.watchId = null;
+  if (walk.tick) clearInterval(walk.tick);
+  walk.tick = null;
+  releaseWakeLock();
+  walk.active = false;
+  walk.startedAt = null;
+  walk.lastPos = null;
+
+  if (durationSec >= WALK_MIN_SAVE_SEC) {
+    walks.unshift({ date, durationSec, distanceKm, startedAt });
+    if (walks.length > 500) walks.length = 500;
+    saveWalks();
+    toast("Walk saved", `${fmtWalkDuration(durationSec)} · ${distanceKm.toFixed(2)} km`);
+  } else {
+    toast("Walk discarded", "Under 30s — not saved");
+  }
+  walk.elapsedSec = 0;
+  walk.distanceKm = 0;
+  walk.geoMsg = "";
+}
+
+function toggleWalk(){
+  if (walk.active) stopWalkSession();
+  else startWalkSession();
+  render();
+}
+
+function walksOnDate(iso){
+  return walks.filter((w) => w.date === iso);
+}
+
+function renderWalkBody(){
+  const days = thisWeekISOs();
+  const labels = ["M","T","W","T","F","S","S"];
+  const today = brisbaneTodayISO();
+  const doneDays = days.filter((d) => walksOnDate(d).length > 0).length;
+  const weekStrip = days.map((d, i) => {
+    const on = walksOnDate(d).length > 0;
+    const isToday = d === today;
+    return `<div class="walk-day${on?" on":""}" title="${esc(d)}"${isToday?` style="box-shadow:0 0 0 1px var(--primary)"`:""}>
+      <span class="wd">${labels[i]}</span>
+      <span class="wd-dot" aria-hidden="true"></span>
+    </div>`;
+  }).join("");
+
+  const timeText = fmtWalkDuration(walk.active ? walk.elapsedSec : 0);
+  const distText = `${(walk.active ? walk.distanceKm : 0).toFixed(2)} km`;
+  const geo = walk.geoMsg ? `<p class="walk-geo">${esc(walk.geoMsg)}</p>` : "";
+  const cta = walk.active
+    ? `<button type="button" class="walk-cta danger" data-act="walk-toggle">Stop</button>`
+    : `<button type="button" class="walk-cta primary" data-act="walk-toggle">Start</button>`;
+
+  const weekSet = new Set(days);
+  const recent = walks.filter((w) => weekSet.has(w.date) || w.date === today).slice(0, 20);
+  // Also include a few more recent if week empty / thin
+  const histSource = recent.length ? recent : walks.slice(0, 12);
+  const hist = histSource.length
+    ? histSource.map((w) => {
+        const when = (() => {
+          try {
+            return new Date(w.startedAt).toLocaleString("en-AU", {
+              timeZone:"Australia/Brisbane", weekday:"short", day:"numeric", month:"short",
+              hour:"2-digit", minute:"2-digit"
+            });
+          } catch { return w.date; }
+        })();
+        return `<div class="walk-row"><div><strong>${esc(fmtWalkDuration(w.durationSec))}</strong>
+          <p class="note" style="margin:0">${esc(when)}</p></div>
+          <span class="meta">${Number(w.distanceKm||0).toFixed(2)} km</span></div>`;
+      }).join("")
+    : `<p class="note" style="margin:.75rem 0 0">No walks yet — tap Start.</p>`;
+
+  return `
+    <section class="panel">
+      <div class="row" style="align-items:center">
+        <p class="tiny" style="margin:0">This week</p>
+        <span class="meta" style="font-weight:700;color:var(--fg)">${doneDays}/7</span>
+      </div>
+      <div class="walk-week" aria-label="Walk days this week">${weekStrip}</div>
+    </section>
+    <section class="card walk-readout" style="margin-top:.75rem">
+      <p class="tiny" style="margin:0">Time</p>
+      <p class="big" data-walk-time style="font-size:3.25rem">${esc(timeText)}</p>
+      <p class="tiny" style="margin:1rem 0 0">Distance</p>
+      <p class="big" data-walk-dist style="font-size:2rem;margin-top:.35rem">${esc(distText)}</p>
+      ${geo}
+    </section>
+    ${cta}
+    <section class="panel" style="margin-top:.75rem">
+      <p class="tiny">Recent</p>
+      <div class="walk-hist">${hist}</div>
+    </section>
+    <p class="foot">GPS needs permission and HTTPS. Distance may pause indoors or with poor signal. Tracking stops if the browser suspends the tab — keep ANVIL open while walking.</p>
+  `;
+}
 
 let ctx = null;
 const clipBuffers = Object.create(null);
@@ -838,7 +1133,7 @@ let state = {
   cuePack: "chime",
   loudCuesV33: true,
 };
-let ui = { remain:0, running:false, isGo:false, panel:"none", settingsTab:"program", pending:null, pickSets:3, pickReps:8, installHint:false, installed:false, toastTimer:null, swReg:null, updateReady:false, updateChecking:false, refreshing:false, appVersion: APP_VERSION, progressLiftId:null, bwDraftKg:null, bwLinkSession:false, pendingHolds:null, expandedEx:new Set() };
+let ui = { remain:0, running:false, isGo:false, panel:"none", settingsTab:"program", pending:null, pickSets:3, pickReps:8, installHint:false, installed:false, toastTimer:null, swReg:null, updateReady:false, updateChecking:false, refreshing:false, appVersion: APP_VERSION, progressLiftId:null, bwDraftKg:null, bwLinkSession:false, pendingHolds:null, expandedEx:new Set(), mainTab:"workout" };
 let remainVal = 0, lastCue = -1, tick = null, deferredInstall = null;
 try {
   ui.installed = window.matchMedia("(display-mode: standalone)").matches || Boolean(navigator.standalone) || /ANVIL-APP/.test(navigator.userAgent) || location.hostname === "appassets.androidplatform.net";
@@ -1902,24 +2197,18 @@ function render(){
     ? `<div class="help" style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap"><span style="color:var(--fg);font-weight:600">Update available</span><button class="install primary" data-act="apply-update">Update now</button></div>`
     : "";
 
-  document.getElementById("app").innerHTML = `
-    <header>
-      <div class="row">
-        <div style="min-width:0">
-          <div class="head-title">${I.anvil}<h1>${esc(program.name)}</h1></div>
-          <p class="sub muted">${esc(sub)}</p>
-        </div>
-        <div class="head-actions">
-          ${ui.installed ? "" : `<button class="install primary" data-act="install">${I.phone} Install</button>`}
-          <button class="icon-btn" data-act="panel" data-p="settings" aria-label="Settings">${I.settings}</button>
-        </div>
-      </div>
-      ${days}
-      ${timerOn?`<div class="timer-bar"><div><p class="note" id="timer-bar-label" style="margin:0">${esc((ui.running||ui.remain>0)?`Rest · ${active?.name??""}`:(active?.name??""))}</p>
-        <p class="big ${timeClass}" data-timer style="font-size:1.875rem">${timeText}</p></div>
-        <div style="display:flex;gap:.375rem"><button class="icon-btn" data-act="rest" data-d="-15">−</button>
-        <button class="icon-btn" data-act="rest" data-d="15">+</button></div></div>`:""}
-    </header>
+  const onWalk = ui.mainTab === "walk";
+  const tabBar = `<nav class="tab-bar" aria-label="Main">
+      <button type="button" data-act="main-tab" data-tab="workout" class="${onWalk?"":"on"}" aria-current="${onWalk?"false":"page"}">${I.workout} Workout</button>
+      <button type="button" data-act="main-tab" data-tab="walk" class="${onWalk?"on":""}" aria-current="${onWalk?"page":"false"}">${I.walk} Walk</button>
+    </nav>`;
+
+  const workoutBody = `
+    ${days}
+    ${timerOn?`<div class="timer-bar"><div><p class="note" id="timer-bar-label" style="margin:0">${esc((ui.running||ui.remain>0)?`Rest · ${active?.name??""}`:(active?.name??""))}</p>
+      <p class="big ${timeClass}" data-timer style="font-size:1.875rem">${timeText}</p></div>
+      <div style="display:flex;gap:.375rem"><button class="icon-btn" data-act="rest" data-d="-15">−</button>
+      <button class="icon-btn" data-act="rest" data-d="15">+</button></div></div>`:""}
     ${updateBanner}
     ${hint}
     <div class="space">${cards}</div>
@@ -1933,14 +2222,38 @@ function render(){
       <button class="primary" id="log-session" data-act="log">Log session</button>
       <button data-act="reset">${I.reset} Reset</button>
     </div>
-    <p class="foot">Tap the big number to complete that set (tap again clears). − / + dial that set’s reps — going below the target marks it failed (red). Leave a lift blank or skip — it won’t count. Last set AMRAP on most lifts — hit target+2 (or more) to add 2.5kg next time. Timed holds and early heave stages skip AMRAP. Ember / Anvil / Titan: 3 clean at a rung climbs 6→8→10→12, then 3×6 +2.5kg (plank waves 20→30→20s, no kg) — AMRAP load bump skips the wave climb that session. Heaves ladder: hang → feet assist → negatives → full (auto-graduate after wave). ANVIL Cossack ladder: supported → short → full depth → goblet (auto-graduate after wave; kg on final). Titan plate bench: 3 clean at 3×12 @ ≥10kg → barbell 3×6 @ 20kg (AMRAP at 12 @ ≥10kg also graduates). Other programs: 3 clean → +2 reps (or +2.5 kg at cap). 3 short sessions → reset week (drop kg first if loaded).</p>
+    <p class="foot">Tap the big number to complete that set (tap again clears). − / + dial that set’s reps — going below the target marks it failed (red). Leave a lift blank or skip — it won’t count. Last set AMRAP on most lifts — hit target+2 (or more) to add 2.5kg next time. Timed holds and early heave stages skip AMRAP. Ember / Anvil / Titan: 3 clean at a rung climbs 6→8→10→12, then 3×6 +2.5kg (plank waves 20→30→20s, no kg) — AMRAP load bump skips the wave climb that session. Heaves ladder: hang → feet assist → negatives → full (auto-graduate after wave). ANVIL Cossack ladder: supported → short → full depth → goblet (auto-graduate after wave; kg on final). Titan plate bench: 3 clean at 3×12 @ ≥10kg → barbell 3×6 @ 20kg (AMRAP at 12 @ ≥10kg also graduates). Other programs: 3 clean → +2 reps (or +2.5 kg at cap). 3 short sessions → reset week (drop kg first if loaded).</p>`;
+
+  const headTitle = onWalk
+    ? `<div class="head-title">${I.walk}<h1>WALK</h1></div><p class="sub muted">${walk.active ? "Walking…" : "Track a walk"}</p>`
+    : `<div class="head-title">${I.anvil}<h1>${esc(program.name)}</h1></div><p class="sub muted">${esc(sub)}</p>`;
+
+  const app = document.getElementById("app");
+  app.classList.add("has-tabs");
+  app.innerHTML = `
+    <header>
+      <div class="row">
+        <div style="min-width:0">${headTitle}</div>
+        <div class="head-actions">
+          ${ui.installed ? "" : `<button class="install primary" data-act="install">${I.phone} Install</button>`}
+          <button class="icon-btn" data-act="panel" data-p="settings" aria-label="Settings">${I.settings}</button>
+        </div>
+      </div>
+    </header>
+    ${onWalk ? (updateBanner + hint + renderWalkBody()) : workoutBody}
     ${balanceHold}
     ${bodyweight}
     ${settings}
+    ${tabBar}
   `;
 }
 
 document.addEventListener("pointerdown", unlockAudio, {once:true});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && walk.active) acquireWakeLock();
+});
+
 document.getElementById("app").addEventListener("input", (e) => {
   const el = e.target.closest("[data-act=vol]");
   if (!el) return;
@@ -1976,6 +2289,15 @@ document.getElementById("app").addEventListener("click", (e) => {
   else if (act==="day") { setDay(+btn.dataset.d); stopRest(); render(); }
   else if (act==="program") { setProgram(btn.dataset.id, 0); stopRest(); ui.panel="none"; toast(`${getProgram(btn.dataset.id).name} loaded`); render(); }
   else if (act==="settings-tab") { const tab=btn.dataset.tab; if (["program","sound","history","progress","backup","about"].includes(tab)) { ui.settingsTab=tab; render(); } }
+  else if (act==="main-tab") {
+    const tab = btn.dataset.tab;
+    if (tab === "workout" || tab === "walk") {
+      ui.mainTab = tab;
+      if (tab !== "workout") { ui.panel = ui.panel === "add" || ui.panel === "remove" ? "none" : ui.panel; }
+      render();
+    }
+  }
+  else if (act==="walk-toggle") { toggleWalk(); }
   else if (act==="panel") { const next=btn.dataset.p; const opening=ui.panel!==next; ui.panel=opening?next:"none"; if (!opening || next!=="add") ui.pending=null; render(); }
   else if (act==="remove") { if (!removeExercise(btn.dataset.id)) toast("Keep at least one lift"); else toast(`${btn.dataset.name} removed`); render(); }
   else if (act==="pick") {
@@ -2034,11 +2356,13 @@ document.getElementById("app").addEventListener("click", (e) => {
 
 try {
   load();
+  loadWalks();
   if (normalizeWaveTargets()) save();
   render();
 } catch {
   try { localStorage.removeItem(STORAGE); } catch {}
   state = { programId:"anvil", dayIndex:0, exercises: seedProgram("anvil", 0), history:[], liftProgress:{}, bodyWeightLog:[], soundVolume:1.0, cuePack:"chime", loudCuesV33:true };
+  try { loadWalks(); } catch {}
   try { render(); } catch {}
 }
 if (location.protocol.startsWith("http") && "serviceWorker" in navigator) {
