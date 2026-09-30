@@ -157,7 +157,7 @@
 <input type="file" id="import-file" accept="application/json,.json" class="hide" />
 <script>
 const STORAGE = "anvil_app_v3";
-const APP_VERSION = "anvil-v34";
+const APP_VERSION = "anvil-v35";
 const CUE_LOUDNESS = 2.4;
 const CUE_MAX_GAIN = 0.95;
 const SET_OPTS = [1,2,3,4,5];
@@ -1329,8 +1329,14 @@ function markSet(ei, si){
     const log = ex.setsLog.map((s,j) => {
       if (j!==si) return s;
       const logged = s.ok || s.miss;
-      if (!logged) return {ok:true, miss:false, reps: s.reps ?? ex.reps};
-      return {ok:false, miss:false};
+      if (!logged) {
+        const r = s.reps ?? ex.reps;
+        // Pass/fail only on rep-box tap: at/above target = ok, below = miss
+        if (r >= ex.reps) return {ok:true, miss:false, reps:r};
+        return {ok:false, miss:true, reps:r};
+      }
+      // Clear completion; keep any adjusted reps
+      return s.reps != null ? {ok:false, miss:false, reps:s.reps} : {ok:false, miss:false};
     });
     return {...ex, skipped:false, setsLog:log};
   });
@@ -1731,7 +1737,6 @@ function adjustRest(d){
 function bumpSetReps(ei, si, delta){
   const ex0 = state.exercises[ei];
   if (!ex0 || ex0.skipped) return;
-  const wasResolved = exerciseResolved(ex0);
   state.exercises = state.exercises.map((ex,i) => {
     if (i!==ei) return ex;
     const target = ex.reps;
@@ -1740,17 +1745,12 @@ function bumpSetReps(ei, si, delta){
       if (j!==si) return s;
       const cur = s.reps ?? target;
       const next = Math.max(0, Math.min(max, cur + delta));
-      if (next < target) return {ok:false, miss:true, reps:next};
-      if (s.ok) return {ok:true, miss:false, reps:next};
-      return {ok:false, miss:false, reps:next};
+      // −/+ only adjust displayed reps; never mark complete/miss
+      return {...s, reps:next};
     });
     return {...ex, setsLog:log};
   });
-  const ex = state.exercises[ei];
-  const justFinished = !wasResolved && exerciseResolved(ex) && !ex.skipped;
-  if (justFinished) ensureExpandedEx().delete(ex.id);
   save(); render();
-  if (justFinished) scheduleJumpToNextIncomplete();
 }
 function onMark(ei, si){
   unlockAudio();
