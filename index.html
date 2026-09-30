@@ -47,6 +47,7 @@
     .meta { color:var(--muted); font-size:0.875rem; text-align:right; flex-shrink:0; line-height:1.35; }
     .weight { display:flex; flex-wrap:wrap; align-items:center; gap:0.5rem; margin-top:0.625rem; }
     .kg { min-width:3.5rem; text-align:center; font-size:1.125rem; font-weight:600; font-variant-numeric:tabular-nums; }
+    .kg.neg { color:var(--primary); }
     .level { flex:1; min-width:0; text-align:center; font-size:0.875rem; font-weight:600; }
     .rest-box { background:var(--inset); border-radius:0.75rem; padding:0.75rem; margin-top:0.75rem; text-align:center; }
     .cue { height:1.5rem; font-size:1.125rem; font-weight:700; letter-spacing:0.04em; margin:0; }
@@ -157,7 +158,7 @@
 <input type="file" id="import-file" accept="application/json,.json" class="hide" />
 <script>
 const STORAGE = "anvil_app_v3";
-const APP_VERSION = "anvil-v35";
+const APP_VERSION = "anvil-v36";
 const CUE_LOUDNESS = 2.4;
 const CUE_MAX_GAIN = 0.95;
 const SET_OPTS = [1,2,3,4,5];
@@ -227,6 +228,20 @@ function isPlankSeconds(ex){
   return ex.id === "em-plank" || ex.id === "tp-plank" || /seconds/i.test(ex.note||"");
 }
 const AMRAP_BONUS = 2;
+const KG_STEP = 2.5;
+const KG_FLOOR = -50; // assisted (negative) loads; floor is practical plate steps
+function clampKg(w){
+  const n = +Number(w).toFixed(1);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(KG_FLOOR, n);
+}
+/** Display kg; unicode minus for negatives (assisted). */
+function fmtKg(w){
+  const n = +Number(w).toFixed(1);
+  if (!Number.isFinite(n)) return "0";
+  const body = n.toFixed(1).replace(/\.0$/, "");
+  return n < 0 ? ("−" + body.slice(1)) : body;
+}
 function usesAmrap(ex){
   if (!ex || (ex.sets ?? 0) < 2) return false;
   if (isPlankSeconds(ex)) return false;
@@ -1347,7 +1362,7 @@ function markSet(ei, si){
   return justFinished;
 }
 function bumpWeight(ei, d){
-  state.exercises = state.exercises.map((ex,i) => i===ei ? {...ex, weight: Math.max(0, +(ex.weight+d).toFixed(1))} : ex);
+  state.exercises = state.exercises.map((ex,i) => i===ei ? {...ex, weight: clampKg(+(ex.weight+d).toFixed(1))} : ex);
   state.liftProgress = captureProgress(state.exercises, state.liftProgress);
   save(); render();
 }
@@ -1460,17 +1475,17 @@ function logSession(){
       if (failStreak >= 3) {
         failStreak = 0;
         if (ex.bw) {
-          if (weight > 0) {
-            weight = Math.max(0, +(weight-2.5).toFixed(1));
-            notes.push(`${ex.name}: RESET WEEK — ${weight} kg × ${reps}`);
+          if (weight !== 0) {
+            weight = clampKg(+(weight-2.5).toFixed(1));
+            notes.push(`${ex.name}: RESET WEEK — ${fmtKg(weight)} kg × ${reps}`);
           } else {
             if (reps>6) reps-=2;
             notes.push(`${ex.name}: RESET WEEK — reps back to ${reps}`);
           }
         } else {
-          weight = Math.max(0, +(weight-2.5).toFixed(1));
-          if (ex.cap) notes.push(`${ex.name}: RESET WEEK — ${weight} kg × ${reps}`);
-          else { if (reps>8) reps-=2; notes.push(`${ex.name}: RESET WEEK — ${weight} kg × ${reps}`); }
+          weight = clampKg(+(weight-2.5).toFixed(1));
+          if (ex.cap) notes.push(`${ex.name}: RESET WEEK — ${fmtKg(weight)} kg × ${reps}`);
+          else { if (reps>8) reps-=2; notes.push(`${ex.name}: RESET WEEK — ${fmtKg(weight)} kg × ${reps}`); }
         }
       } else notes.push(`${ex.name}: no-rep ${failStreak}/3 — stay at ${reps}`);
       return {...ex, streak:0, failStreak, reps, weight, setsLog: blankSets(ex.sets)};
@@ -1841,7 +1856,7 @@ function liftSeries(liftId){
     if (!Array.isArray(h.lifts)) continue;
     const hit = h.lifts.find(l => l.id === liftId);
     if (!hit) continue;
-    pts.push({ t: h.date, weight: Number(hit.weight)||0, reps: Number(hit.reps)||0, clean: !!hit.clean, name: hit.name });
+    { const w = Number(hit.weight); const r = Number(hit.reps); pts.push({ t: h.date, weight: Number.isFinite(w) ? w : 0, reps: Number.isFinite(r) ? r : 0, clean: !!hit.clean, name: hit.name }); }
   }
   return pts;
 }
@@ -1872,8 +1887,10 @@ function progressLiftOptions(){
 function isRepsChartLift(pts){
   if (!pts.length) return false;
   const last = pts[pts.length - 1];
-  const allZeroW = pts.every(p => !(p.weight > 0));
-  return allZeroW || !(last.weight > 0);
+  // Non-zero includes negative assist kg — chart those as load, not reps
+  const hasLoad = (w) => Number.isFinite(w) && w !== 0;
+  const allZeroW = pts.every(p => !hasLoad(p.weight));
+  return allZeroW || !hasLoad(last.weight);
 }
 
 function svgLineChart(points, { yLabel } = {}){
@@ -1981,10 +1998,11 @@ function render(){
     const remainText = isActive ? timeText : fmtTime(ex.rest);
     const tClass = isActive ? timeClass : "";
     const level = ex.levels?.length ? ex.levels[ex.levelIndex??0] : null;
+    const wNeg = Number(ex.weight) < 0;
     const weightCtrl = `<button class="icon-btn" data-act="weight" data-i="${ei}" data-d="-2.5" aria-label="Decrease weight">${I.minus}</button>
-           <span class="kg">${ex.weight}</span>
+           <span class="kg${wNeg?" neg":""}">${fmtKg(ex.weight)}</span>
            <button class="icon-btn" data-act="weight" data-i="${ei}" data-d="2.5" aria-label="Increase weight">${I.plus}</button>
-           <span class="muted" style="font-size:.875rem">kg</span>`;
+           <span class="muted" style="font-size:.875rem">${wNeg?"kg assist":"kg"}</span>`;
     const load = ex.levels?.length
       ? `<button class="icon-btn" data-act="level" data-i="${ei}" data-d="-1" aria-label="Easier height">${I.minus}</button>
          <span class="level">${esc(level)}</span>
@@ -2222,7 +2240,7 @@ function render(){
       <button class="primary" id="log-session" data-act="log">Log session</button>
       <button data-act="reset">${I.reset} Reset</button>
     </div>
-    <p class="foot">Tap the big number to complete that set (tap again clears). − / + dial that set’s reps — going below the target marks it failed (red). Leave a lift blank or skip — it won’t count. Last set AMRAP on most lifts — hit target+2 (or more) to add 2.5kg next time. Timed holds and early heave stages skip AMRAP. Ember / Anvil / Titan: 3 clean at a rung climbs 6→8→10→12, then 3×6 +2.5kg (plank waves 20→30→20s, no kg) — AMRAP load bump skips the wave climb that session. Heaves ladder: hang → feet assist → negatives → full (auto-graduate after wave). ANVIL Cossack ladder: supported → short → full depth → goblet (auto-graduate after wave; kg on final). Titan plate bench: 3 clean at 3×12 @ ≥10kg → barbell 3×6 @ 20kg (AMRAP at 12 @ ≥10kg also graduates). Other programs: 3 clean → +2 reps (or +2.5 kg at cap). 3 short sessions → reset week (drop kg first if loaded).</p>`;
+    <p class="foot">Tap the big number to complete that set (tap again clears). − / + dial that set’s reps — going below the target marks it failed (red). Leave a lift blank or skip — it won’t count. Weight − can go negative (assist kg; less assist = progress). Last set AMRAP on most lifts — hit target+2 (or more) to add 2.5kg next time. Timed holds and early heave stages skip AMRAP. Ember / Anvil / Titan: 3 clean at a rung climbs 6→8→10→12, then 3×6 +2.5kg (plank waves 20→30→20s, no kg) — AMRAP load bump skips the wave climb that session. Heaves ladder: hang → feet assist → negatives → full (auto-graduate after wave). ANVIL Cossack ladder: supported → short → full depth → goblet (auto-graduate after wave; kg on final). Titan plate bench: 3 clean at 3×12 @ ≥10kg → barbell 3×6 @ 20kg (AMRAP at 12 @ ≥10kg also graduates). Other programs: 3 clean → +2 reps (or +2.5 kg at cap). 3 short sessions → reset week (drop kg first if loaded).</p>`;
 
   const headTitle = onWalk
     ? `<div class="head-title">${I.walk}<h1>WALK</h1></div><p class="sub muted">${walk.active ? "Walking…" : "Track a walk"}</p>`

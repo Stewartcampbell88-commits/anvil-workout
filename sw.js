@@ -1,4 +1,4 @@
-const CACHE = "anvil-v35";
+const CACHE = "anvil-v36";
 const SHELL = [
   "./",
   "./index.html",
