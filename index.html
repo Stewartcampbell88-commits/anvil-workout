@@ -113,6 +113,28 @@
     .progress-select { width:100%; min-height:2.75rem; border-radius:0.75rem; padding:0 0.75rem; font:inherit; font-weight:600; background:var(--border); color:var(--fg); border:0; margin-top:0.5rem; }
     svg.chart-svg { width:100%; height:auto; display:block; stroke:none; fill:none; }
     .chart-empty { color:var(--muted); font-size:0.875rem; margin:0.75rem 0 0; }
+    .seg { display:flex; gap:0.25rem; background:var(--inset); border-radius:0.75rem; padding:0.25rem; box-shadow:0 0 0 1px rgb(243 243 243 / 0.08); }
+    .seg button { flex:1; min-height:2.25rem; border-radius:0.5rem; font-size:0.75rem; padding:0 0.125rem; white-space:nowrap; font-weight:700; color:var(--muted); }
+    .seg button.on { background:var(--primary); color:var(--primary-fg); }
+    .chart-head { display:flex; align-items:baseline; justify-content:space-between; gap:0.5rem; }
+    .chart-unit { font-size:0.8125rem; font-weight:700; color:var(--muted); }
+    .stat-row { display:grid; grid-template-columns:repeat(3,1fr); gap:0.375rem; margin:0.625rem 0 0.5rem; }
+    .stat { background:var(--inset); border-radius:0.625rem; padding:0.375rem 0.5rem; display:flex; flex-direction:column; min-width:0; }
+    .stat-lab { font-size:0.625rem; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted); }
+    .stat-val { font-family:var(--display); font-size:1.0625rem; font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .chart-read { margin:0.375rem 0 0; font-size:0.8125rem; font-weight:600; min-height:1.2em; }
+    .chart-legend { margin:0.375rem 0 0; font-size:0.6875rem; color:var(--muted); display:flex; align-items:center; gap:0.3rem; flex-wrap:wrap; }
+    .lg-line { display:inline-block; width:0.9rem; height:2px; background:var(--primary); }
+    .lg-dash { display:inline-block; width:0.9rem; border-top:2px dashed rgb(243 243 243 / 0.55); margin-left:0.4rem; }
+    .lg-dot { display:inline-block; width:0.5rem; height:0.5rem; border-radius:999px; background:var(--primary); margin-left:0.3rem; }
+    .lg-dot:first-child { margin-left:0; }
+    .lg-dot.hollow { background:transparent; box-shadow:inset 0 0 0 1.5px var(--primary); }
+    .lg-dot.pr { background:transparent; box-shadow:inset 0 0 0 2px var(--done); }
+    .chart-hit { cursor:pointer; }
+    .headline { display:flex; flex-direction:column; margin:0.5rem 0 0.375rem; }
+    .hl-val { font-family:var(--display); font-size:2rem; font-weight:700; line-height:1.05; font-variant-numeric:tabular-nums; }
+    .hl-val small { font-size:0.9rem; color:var(--muted); }
+    .hl-sub { font-size:0.75rem; color:var(--muted); margin-top:0.125rem; }
 
     .card.collapsed { padding:0.75rem 1rem; }
     .card.collapsed.pass { box-shadow:0 0 0 1px var(--done); }
@@ -158,7 +180,7 @@
 <input type="file" id="import-file" accept="application/json,.json" class="hide" />
 <script>
 const STORAGE = "anvil_app_v3";
-const APP_VERSION = "anvil-v36";
+const APP_VERSION = "anvil-v37";
 const CUE_LOUDNESS = 2.4;
 const CUE_MAX_GAIN = 0.95;
 const SET_OPTS = [1,2,3,4,5];
@@ -1148,7 +1170,7 @@ let state = {
   cuePack: "chime",
   loudCuesV33: true,
 };
-let ui = { remain:0, running:false, isGo:false, panel:"none", settingsTab:"program", pending:null, pickSets:3, pickReps:8, installHint:false, installed:false, toastTimer:null, swReg:null, updateReady:false, updateChecking:false, refreshing:false, appVersion: APP_VERSION, progressLiftId:null, bwDraftKg:null, bwLinkSession:false, pendingHolds:null, expandedEx:new Set(), mainTab:"workout" };
+let ui = { remain:0, running:false, isGo:false, panel:"none", settingsTab:"program", pending:null, pickSets:3, pickReps:8, installHint:false, installed:false, toastTimer:null, swReg:null, updateReady:false, updateChecking:false, refreshing:false, appVersion: APP_VERSION, progressLiftId:null, progressRange:"1m", bwDraftKg:null, bwLinkSession:false, pendingHolds:null, expandedEx:new Set(), mainTab:"workout" };
 let remainVal = 0, lastCue = -1, tick = null, deferredInstall = null;
 try {
   ui.installed = window.matchMedia("(display-mode: standalone)").matches || Boolean(navigator.standalone) || /ANVIL-APP/.test(navigator.userAgent) || location.hostname === "appassets.androidplatform.net";
@@ -1893,42 +1915,197 @@ function isRepsChartLift(pts){
   return allZeroW || !hasLoad(last.weight);
 }
 
-function svgLineChart(points, { yLabel } = {}){
-  const W = 320, H = 140;
-  const padL = 36, padR = 12, padT = 16, padB = 28;
-  if (!points.length) {
-    return `<p class="chart-empty">No data yet.</p>`;
+const CHART_DATA = {};
+const PROGRESS_RANGES = { "last3": { label:"Last 3", days:0, last:3, walkWeeks:3, desc:"last 3" }, "1m": { label:"1 month", days:30, walkWeeks:5, desc:"1 month" }, "6m": { label:"6 months", days:182, walkWeeks:26, desc:"6 months" }, "1y": { label:"1 year", days:365, walkWeeks:52, desc:"1 year" } };
+function fmtNum(v){
+  if (!Number.isFinite(v)) return "—";
+  const r = Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(Math.abs(v))) : Math.abs(v).toFixed(1);
+  return (v < 0 ? "−" : "") + r;
+}
+function fmtSigned(v){
+  if (!Number.isFinite(v)) return "—";
+  if (Math.abs(v) < 0.05) return "0";
+  return (v > 0 ? "+" : "") + fmtNum(v);
+}
+function fmtShortDate(t){
+  try { return new Date(t).toLocaleDateString("en-AU",{timeZone:"Australia/Brisbane",day:"numeric",month:"short"}); }
+  catch { return ""; }
+}
+function fmtDayDate(t){
+  try { return new Date(t).toLocaleDateString("en-AU",{timeZone:"Australia/Brisbane",weekday:"short",day:"numeric",month:"short"}); }
+  catch { return ""; }
+}
+function curRange(){ return PROGRESS_RANGES[ui.progressRange] || PROGRESS_RANGES["1m"]; }
+// pts oldest → newest; "Last 3" = last 3 entries of that series
+function inRange(pts){
+  const r = curRange();
+  const ok = pts.filter(p => Number.isFinite(new Date(p.t).getTime()));
+  if (r.last) return ok.slice(-r.last);
+  const cut = Date.now() - r.days * 86400000;
+  return ok.filter(p => new Date(p.t).getTime() >= cut);
+}
+// Monotone cubic (Fritsch–Carlson): smooth, never overshoots the real values
+function smoothPath(c){
+  const n = c.length, f1 = (v) => v.toFixed(1);
+  if (n < 3) return c.map((p, i) => `${i ? "L" : "M"}${f1(p.x)} ${f1(p.y)}`).join("");
+  const dx = [], m = [], t = new Array(n);
+  for (let i = 0; i < n - 1; i++) { dx[i] = c[i+1].x - c[i].x || 1e-6; m[i] = (c[i+1].y - c[i].y) / dx[i]; }
+  t[0] = m[0]; t[n-1] = m[n-2];
+  for (let i = 1; i < n - 1; i++) t[i] = m[i-1] * m[i] <= 0 ? 0 : (3 * (dx[i-1] + dx[i])) / ((2 * dx[i] + dx[i-1]) / m[i-1] + (dx[i] + 2 * dx[i-1]) / m[i]);
+  let d = `M${f1(c[0].x)} ${f1(c[0].y)}`;
+  for (let i = 0; i < n - 1; i++) {
+    const h = dx[i] / 3;
+    d += `C${f1(c[i].x + h)} ${f1(c[i].y + t[i] * h)} ${f1(c[i+1].x - h)} ${f1(c[i+1].y - t[i+1] * h)} ${f1(c[i+1].x)} ${f1(c[i+1].y)}`;
   }
-  const ys = points.map(p => p.y);
-  let yMin = Math.min(...ys);
-  let yMax = Math.max(...ys);
-  if (yMin === yMax) { yMin = yMin - 1; yMax = yMax + 1; }
-  const yPad = (yMax - yMin) * 0.08;
-  yMin -= yPad; yMax += yPad;
-  const x0 = padL, x1 = W - padR, y0 = padT, y1 = H - padB;
-  const n = points.length;
-  const coords = points.map((p, i) => {
-    const x = n === 1 ? (x0 + x1) / 2 : x0 + (i / (n - 1)) * (x1 - x0);
-    const y = y1 - ((p.y - yMin) / (yMax - yMin)) * (y1 - y0);
-    return { x, y, ...p };
+  return d;
+}
+function niceStep(span, target){
+  const raw = span / Math.max(1, target);
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const n = raw / mag;
+  const step = n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10;
+  return step * mag;
+}
+function movingAvg(ys, win){
+  return ys.map((_, i) => {
+    const s = ys.slice(Math.max(0, i - win + 1), i + 1);
+    return s.reduce((a, b) => a + b, 0) / s.length;
   });
-  const poly = coords.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(" ");
-  const dots = coords.map(c => `<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="3.5" fill="var(--primary)" />`).join("");
-  const fmtY = (v) => (Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1));
-  const minLab = fmtY(Math.min(...ys));
-  const maxLab = fmtY(Math.max(...ys));
-  const firstDate = points[0].t ? fmtWhen(points[0].t).split("·")[0].trim() : "";
-  const lastDate = points[points.length-1].t ? fmtWhen(points[points.length-1].t).split("·")[0].trim() : "";
-  return `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(yLabel||"chart")}">
-    <line x1="${x0}" y1="${y0}" x2="${x0}" y2="${y1}" stroke="var(--border)" stroke-width="1"/>
-    <line x1="${x0}" y1="${y1}" x2="${x1}" y2="${y1}" stroke="var(--border)" stroke-width="1"/>
-    <text x="4" y="${y0+4}" fill="var(--muted)" font-size="10">${esc(maxLab)}</text>
-    <text x="4" y="${y1}" fill="var(--muted)" font-size="10">${esc(minLab)}</text>
-    <text x="${x0}" y="${H-6}" fill="var(--muted)" font-size="9">${esc(firstDate)}</text>
-    <text x="${x1}" y="${H-6}" fill="var(--muted)" font-size="9" text-anchor="end">${esc(lastDate)}</text>
-    <polyline points="${poly}" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+}
+// points: [{t, y, read, pr?, hollow?}] oldest → newest
+function svgLineChart(id, points, { unit = "", trend = 0, zeroLine = false } = {}){
+  if (!points.length) return `<p class="chart-empty">No data in this range.</p>`;
+  const W = 240, H = 150, padL = 30, padR = 10, padT = 12, padB = 22;
+  const x0 = padL, x1 = W - padR, y0 = padT, y1 = H - padB;
+  const ms = points.map(p => new Date(p.t).getTime());
+  const ys = points.map(p => p.y);
+  const trendYs = trend && points.length >= 3 ? movingAvg(ys, trend) : null;
+  let lo = Math.min(...ys), hi = Math.max(...ys);
+  if (zeroLine && lo < 0) hi = Math.max(hi, 0);
+  if (zeroLine && hi > 0 && lo < 0) { /* zero inside */ }
+  if (hi - lo < 1) { const mid = (hi + lo) / 2; lo = mid - 1; hi = mid + 1; }
+  const step = niceStep(hi - lo, 3);
+  let yMin = Math.floor(lo / step) * step, yMax = Math.ceil(hi / step) * step;
+  if (yMax - yMin < step) yMax = yMin + step;
+  let tMin = Math.min(...ms), tMax = Math.max(...ms);
+  const single = tMax - tMin < 3600000;
+  const X = (t) => single ? (x0 + x1) / 2 : x0 + ((t - tMin) / (tMax - tMin)) * (x1 - x0);
+  const Y = (v) => y1 - ((v - yMin) / (yMax - yMin)) * (y1 - y0);
+  const f1 = (n) => n.toFixed(1);
+  let grid = "";
+  for (let v = yMin; v <= yMax + step / 2; v += step) {
+    const yy = Y(v);
+    const isZero = Math.abs(v) < step / 100;
+    grid += `<line x1="${x0}" y1="${f1(yy)}" x2="${x1}" y2="${f1(yy)}" stroke="${isZero && zeroLine ? "var(--muted)" : "var(--border)"}" stroke-width="${isZero && zeroLine ? 1 : 0.75}"${isZero && zeroLine ? ' stroke-dasharray="3 3"' : ""}/>`;
+    grid += `<text x="${x0 - 4}" y="${f1(yy + 3.5)}" fill="var(--muted)" font-size="9.5" text-anchor="end">${esc(fmtNum(v))}</text>`;
+  }
+  let xt = "";
+  const tickTs = single ? [ms[0]] : [tMin, (tMin + tMax) / 2, tMax];
+  tickTs.forEach((t, i) => {
+    const anchor = single ? "middle" : i === 0 ? "start" : i === 2 ? "end" : "middle";
+    xt += `<text x="${f1(X(t))}" y="${H - 6}" fill="var(--muted)" font-size="9.5" text-anchor="${anchor}">${esc(fmtShortDate(t))}</text>`;
+  });
+  const coords = points.map((p, i) => ({ x: X(ms[i]), y: Y(p.y) }));
+  const path = smoothPath(coords);
+  const area = coords.length > 1 ? `${path}L${f1(coords[coords.length-1].x)} ${y1}L${f1(coords[0].x)} ${y1}Z` : "";
+  const trendPath = trendYs ? smoothPath(trendYs.map((v, i) => ({ x: coords[i].x, y: Y(v) }))) : "";
+  const showDots = points.length <= 40;
+  const dots = points.map((p, i) => {
+    const c = coords[i];
+    if (p.pr) return `<circle cx="${f1(c.x)}" cy="${f1(c.y)}" r="4.5" fill="var(--surface)" stroke="var(--done)" stroke-width="2"/>`;
+    if (!showDots && i !== points.length - 1) return "";
+    return p.hollow
+      ? `<circle cx="${f1(c.x)}" cy="${f1(c.y)}" r="3" fill="var(--surface)" stroke="var(--primary)" stroke-width="1.5"/>`
+      : `<circle cx="${f1(c.x)}" cy="${f1(c.y)}" r="3" fill="var(--primary)"/>`;
+  }).join("");
+  const hits = points.map((p, i) => `<circle class="chart-hit" data-act="chart-pt" data-c="${esc(id)}" data-i="${i}" cx="${f1(coords[i].x)}" cy="${f1(coords[i].y)}" r="11" fill="transparent"/>`).join("");
+  CHART_DATA[id] = points.map((p, i) => ({ x: coords[i].x, y: coords[i].y, read: p.read }));
+  const last = points[points.length - 1];
+  const gid = `g-${id}`;
+  const lc = coords[coords.length - 1];
+  const tagTxt = `${fmtNum(last.y)}${unit === "kg" ? " kg" : ""}`;
+  const tagW = tagTxt.length * 6 + 10;
+  const tagX = Math.min(x1 - tagW / 2, Math.max(x0 + tagW / 2, lc.x));
+  const tagY = lc.y - 12 < y0 + 2 ? lc.y + 18 : lc.y - 12;
+  const latestTag = `<circle cx="${f1(lc.x)}" cy="${f1(lc.y)}" r="7" fill="var(--primary)" fill-opacity=".25"/><circle cx="${f1(lc.x)}" cy="${f1(lc.y)}" r="4" fill="var(--primary)" stroke="var(--fg)" stroke-width="1.5"/>
+    <rect x="${f1(tagX - tagW / 2)}" y="${f1(tagY - 10)}" width="${tagW}" height="14" rx="7" fill="var(--primary)"/><text x="${f1(tagX)}" y="${f1(tagY + 0.5)}" fill="var(--primary-fg)" font-size="9.5" font-weight="700" text-anchor="middle">${esc(tagTxt)}</text>`;
+  return `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(unit)} chart">
+    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--primary)" stop-opacity=".42"/><stop offset="1" stop-color="var(--primary)" stop-opacity="0"/></linearGradient></defs>
+    ${grid}${xt}
+    ${area ? `<path d="${area}" fill="url(#${gid})"/>` : ""}
+    ${trendPath ? `<path d="${trendPath}" fill="none" stroke="var(--fg)" stroke-opacity=".55" stroke-width="1.5" stroke-dasharray="4 3" stroke-linecap="round"/>` : ""}
+    <path d="${path}" fill="none" stroke="var(--primary)" stroke-width="2.75" stroke-linejoin="round" stroke-linecap="round"/>
     ${dots}
-  </svg>`;
+    ${latestTag}
+    <circle data-chart-hl="${esc(id)}" cx="${f1(coords[coords.length-1].x)}" cy="${f1(coords[coords.length-1].y)}" r="6" fill="none" stroke="var(--fg)" stroke-width="1.5" opacity="0"/>
+    ${hits}
+  </svg>
+  <p class="chart-read" data-chart-read="${esc(id)}">${esc(last.read || "")}<span class="muted"> · tap a point</span></p>`;
+}
+function svgBarChart(id, bars, { unit = "" } = {}){
+  if (!bars.length || bars.every(b => !b.y)) return `<p class="chart-empty">No walks in this range.</p>`;
+  const W = 240, H = 130, padL = 26, padR = 6, padT = 10, padB = 22;
+  const x0 = padL, x1 = W - padR, y0 = padT, y1 = H - padB;
+  const hi = Math.max(...bars.map(b => b.y), 0.1);
+  const step = niceStep(hi, 3);
+  const yMax = Math.ceil(hi / step) * step;
+  const Y = (v) => y1 - (v / yMax) * (y1 - y0);
+  const f1 = (n) => n.toFixed(1);
+  let grid = "";
+  for (let v = 0; v <= yMax + step / 2; v += step) {
+    grid += `<line x1="${x0}" y1="${f1(Y(v))}" x2="${x1}" y2="${f1(Y(v))}" stroke="var(--border)" stroke-width="0.75"/><text x="${x0 - 4}" y="${f1(Y(v) + 3.5)}" fill="var(--muted)" font-size="9.5" text-anchor="end">${esc(fmtNum(v))}</text>`;
+  }
+  const slot = (x1 - x0) / bars.length;
+  const bw = Math.max(3, Math.min(18, slot * 0.66));
+  let out = "", lab = "";
+  const labEvery = Math.ceil(bars.length / 4);
+  CHART_DATA[id] = [];
+  bars.forEach((b, i) => {
+    const cx = x0 + slot * (i + 0.5);
+    const top = Y(b.y);
+    out += `<rect x="${f1(cx - bw / 2)}" y="${f1(top)}" width="${f1(bw)}" height="${f1(Math.max(0, y1 - top))}" rx="2" fill="var(--primary)" fill-opacity="${b.current ? 1 : 0.6}"/>`;
+    out += `<rect class="chart-hit" data-act="chart-pt" data-c="${esc(id)}" data-i="${i}" x="${f1(cx - slot / 2)}" y="${y0}" width="${f1(slot)}" height="${f1(y1 - y0)}" fill="transparent"/>`;
+    if ((bars.length - 1 - i) % labEvery === 0) lab += `<text x="${f1(cx)}" y="${H - 6}" fill="var(--muted)" font-size="9.5" text-anchor="middle">${esc(b.label)}</text>`;
+    CHART_DATA[id].push({ x: cx, y: top, read: b.read });
+  });
+  const last = bars[bars.length - 1];
+  return `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(unit)} per week">${grid}${out}${lab}
+    <circle data-chart-hl="${esc(id)}" cx="0" cy="0" r="0" opacity="0"/></svg>
+  <p class="chart-read" data-chart-read="${esc(id)}">${esc(last.read)}<span class="muted"> · tap a bar</span></p>`;
+}
+function showChartPoint(id, i){
+  const d = CHART_DATA[id]?.[i];
+  if (!d) return;
+  const read = document.querySelector(`[data-chart-read="${id}"]`);
+  if (read) read.textContent = d.read || "";
+  const hl = document.querySelector(`[data-chart-hl="${id}"]`);
+  if (hl && hl.getAttribute("r") !== "0") { hl.setAttribute("cx", d.x.toFixed(1)); hl.setAttribute("cy", d.y.toFixed(1)); hl.setAttribute("opacity", "1"); }
+}
+function isoToUtcMs(iso){ const [y, m, d] = String(iso).split("-").map(Number); return Date.UTC(y, (m||1) - 1, d||1); }
+function utcMsToIso(ms){ const t = new Date(ms); return `${t.getUTCFullYear()}-${String(t.getUTCMonth()+1).padStart(2,"0")}-${String(t.getUTCDate()).padStart(2,"0")}`; }
+function walkWeekBars(){
+  const thisMon = isoToUtcMs(mondayOfThisWeekISO());
+  const weeks = curRange().walkWeeks;
+  const bars = [];
+  for (let k = weeks - 1; k >= 0; k--) {
+    const start = thisMon - k * 7 * 86400000, end = start + 7 * 86400000;
+    const ws = walks.filter(w => { const t = isoToUtcMs(w.date); return t >= start && t < end; });
+    const km = ws.reduce((a, w) => a + (Number(w.distanceKm) || 0), 0);
+    const min = ws.reduce((a, w) => a + (Number(w.durationSec) || 0), 0) / 60;
+    const d = new Date(start);
+    const label = `${d.getUTCDate()} ${d.toLocaleString("en-AU",{month:"short",timeZone:"UTC"})}`;
+    bars.push({ km, min, n: ws.length, label, current: k === 0, read: `${k === 0 ? "This week" : `Week of ${label}`} · ${ws.length} walk${ws.length === 1 ? "" : "s"} · ${km.toFixed(1)} km · ${Math.round(min)} min` });
+  }
+  const useKm = bars.some(b => b.km >= 0.05);
+  bars.forEach(b => { b.y = useKm ? b.km : b.min; });
+  return { bars, unit: useKm ? "km" : "min" };
+}
+function headline(delta, unit, from, to, good){
+  const col = !Number.isFinite(delta) || Math.abs(delta) < 0.05 ? "var(--fg)" : good == null ? "var(--fg)" : (good ? "var(--done)" : "var(--miss)");
+  return `<div class="headline"><span class="hl-val" style="color:${col}">${esc(fmtSigned(delta))}${unit ? ` <small>${esc(unit)}</small>` : ""}</span><span class="hl-sub">over ${esc(curRange().desc)} · ${esc(fmtNum(from))} → ${esc(fmtNum(to))}</span></div>`;
+}
+function statRow(items){
+  return `<div class="stat-row">${items.map(s => `<div class="stat"><span class="stat-lab">${esc(s.lab)}</span><span class="stat-val"${s.color ? ` style="color:${s.color}"` : ""}>${esc(s.val)}</span></div>`).join("")}</div>`;
 }
 
 function renderTimerOnly(){
@@ -2106,36 +2283,77 @@ function render(){
       : `<ol style="margin:.5rem 0 0;padding:0;list-style:none">${state.history.slice(0,8).map(h=>`<li style="margin-top:.75rem"><p style="margin:0;font-size:.875rem;font-weight:600">${esc(fmtWhen(h.date))}</p><p class="note">${esc(h.notes.join(" · "))}</p></li>`).join("")}</ol>`
     }</section>`;
   } else if (settingsTab === "progress") {
-    const bwPts = bodySeries();
+    if (!PROGRESS_RANGES[ui.progressRange]) ui.progressRange = "1m";
+    const rangeHtml = `<div class="seg" role="group" aria-label="Range">${Object.entries(PROGRESS_RANGES).map(([k, r]) => `<button class="${k === ui.progressRange ? "on" : ""}" data-act="progress-range" data-r="${k}">${r.label}</button>`).join("")}</div>`;
+    // Body weight
+    const bwAll = bodySeries();
+    const bwPts = inRange(bwAll);
     const latestBw = state.bodyWeightLog[0]?.kg;
-    const bwChart = bwPts.length
-      ? svgLineChart(bwPts.map(p => ({ t: p.t, y: p.y })), { yLabel: "kg" })
-      : `<p class="chart-empty">Log a session or add a weigh-in.</p>`;
+    let bwStats = "", bwChart;
+    if (!bwAll.length) bwChart = `<p class="chart-empty">Log a session or add a weigh-in.</p>`;
+    else {
+      bwChart = svgLineChart("bw", bwPts.map(p => ({ t: p.t, y: p.y, read: `${fmtDayDate(p.t)} · ${fmtNum(p.y)} kg` })), { unit: "kg", trend: 7 });
+      if (bwPts.length) {
+        const d = bwPts[bwPts.length - 1].y - bwPts[0].y;
+        bwStats = headline(d, "kg", bwPts[0].y, bwPts[bwPts.length-1].y, null);
+      }
+    }
+    const bwLegend = bwPts.length >= 3 ? `<p class="chart-legend"><span class="lg-line"></span>Weigh-ins <span class="lg-dash"></span>7-entry avg</p>` : "";
+    // Lifts
     const liftOpts = progressLiftOptions();
     if (!ui.progressLiftId || !liftOpts.some(o => o.id === ui.progressLiftId)) {
       ui.progressLiftId = liftOpts[0]?.id || null;
     }
-    const series = ui.progressLiftId ? liftSeries(ui.progressLiftId) : [];
-    const useReps = isRepsChartLift(series);
-    const liftPts = series.map(p => ({ t: p.t, y: useReps ? p.reps : p.weight }));
-    const lastName = series[series.length-1]?.name || "";
+    const seriesAll = ui.progressLiftId ? liftSeries(ui.progressLiftId) : [];
+    const useReps = isRepsChartLift(seriesAll);
+    const lastName = seriesAll[seriesAll.length-1]?.name || "";
     const secAxis = useReps && (/hang|plank/i.test(lastName) || /sec/i.test(lastName) || ui.progressLiftId==="em-plank" || ui.progressLiftId==="tp-plank");
     const axisLabel = useReps ? (secAxis ? "sec" : "reps") : "kg";
-    const liftChart = liftPts.length
-      ? svgLineChart(liftPts, { yLabel: axisLabel })
-      : `<p class="chart-empty">Complete sessions to track lifts.</p>`;
+    let best = -Infinity, prCount = 0;
+    const liftAll = seriesAll.map((p, i) => {
+      const y = useReps ? p.reps : p.weight;
+      const pr = i > 0 && y > best;
+      if (pr) prCount++;
+      best = Math.max(best, y);
+      const wTxt = p.weight < 0 ? `${fmtNum(p.weight)} kg assist` : `${fmtNum(p.weight)} kg`;
+      const read = `${fmtDayDate(p.t)} · ${useReps ? `${fmtNum(p.reps)} ${axisLabel}${p.weight ? ` @ ${wTxt}` : ""}` : `${wTxt} × ${fmtNum(p.reps)}`}${p.clean ? "" : " · missed"}${pr ? " · PR" : ""}`;
+      return { t: p.t, y, read, pr, hollow: !p.clean };
+    });
+    const liftPts = inRange(liftAll);
+    const liftChart = !seriesAll.length
+      ? `<p class="chart-empty">Complete sessions to track lifts.</p>`
+      : svgLineChart("lift", liftPts, { unit: axisLabel, zeroLine: !useReps });
+    let liftStats = "";
+    if (liftPts.length) {
+      const a = liftPts[0].y, z = liftPts[liftPts.length-1].y, d = z - a;
+      liftStats = headline(d, axisLabel, a, z, d > 0);
+    }
+    const assistNote = !useReps && seriesAll.some(p => p.weight < 0) ? `<p class="note" style="margin-top:.5rem">Below 0 = assist kg. Climbing toward 0 means less help.</p>` : "";
+    const liftLegend = liftPts.length ? `<p class="chart-legend"><span class="lg-dot"></span>Clean <span class="lg-dot hollow"></span>Missed <span class="lg-dot pr"></span>PR${liftPts.filter(p => p.pr).length ? ` ×${liftPts.filter(p => p.pr).length}` : ""}</p>` : "";
     const selectHtml = liftOpts.length
       ? `<select class="progress-select" data-act="progress-lift" aria-label="Lift">${liftOpts.map(o=>`<option value="${esc(o.id)}"${o.id===ui.progressLiftId?" selected":""}>${esc(o.name)}</option>`).join("")}</select>`
       : `<p class="note" style="margin-top:.5rem">No lifts logged yet.</p>`;
-    settingsDetail = `<section class="panel"><p class="tiny">Body weight</p>
-        <p style="margin:.5rem 0 0;font-size:1rem;font-weight:700">${latestBw!=null?`${esc(String(latestBw))} kg`:"—"}</p>
+    // Walks
+    const wk = walkWeekBars();
+    const walkTotal = wk.bars.reduce((a, b) => a + b.y, 0);
+    const walkChart = svgBarChart("walk", wk.bars, { unit: wk.unit });
+    settingsDetail = `${rangeHtml}
+      <section class="panel"><div class="chart-head"><p class="tiny">Body weight</p><span class="chart-unit">${latestBw!=null?`${esc(fmtNum(Number(latestBw)))} kg`:"—"}</span></div>
+        ${bwStats}
         ${bwChart}
+        ${bwLegend}
         <button class="split" style="width:100%;margin-top:.75rem"><span class="primary" style="display:flex;width:100%;min-height:2.75rem;border-radius:.75rem;align-items:center;justify-content:center;font-weight:700" data-act="log-bw-now">Log body weight</span></button>
       </section>
-      <section class="panel"><p class="tiny">Lifts</p>
+      <section class="panel"><div class="chart-head"><p class="tiny">Lifts</p><span class="chart-unit">${esc(axisLabel)}</span></div>
         ${selectHtml}
-        <p class="tiny" style="margin-top:.75rem;letter-spacing:.08em">${esc(axisLabel)}</p>
+        ${liftStats}
         ${liftChart}
+        ${liftLegend}
+        ${assistNote}
+      </section>
+      <section class="panel"><div class="chart-head"><p class="tiny">Walks / week</p><span class="chart-unit">${esc(wk.unit)}</span></div>
+        ${walks.length ? statRow([{ lab:"Total", val:String(Math.round(walkTotal)) }, { lab:"Walks", val:String(wk.bars.reduce((a, b) => a + b.n, 0)) }, { lab:"Avg/wk", val:fmtNum(walkTotal / wk.bars.length) }]) : ""}
+        ${walks.length ? walkChart : `<p class="chart-empty">No walks yet — use the Walk tab.</p>`}
       </section>`;
   } else if (settingsTab === "backup") {
     settingsDetail = `<section class="panel"><p class="tiny">Backup</p>
@@ -2304,6 +2522,8 @@ document.getElementById("app").addEventListener("click", (e) => {
   else if (act==="level") bumpLevel(+btn.dataset.i, +btn.dataset.d);
   else if (act==="skip") { const ei=+btn.dataset.i; skipExercise(ei); if (ei===currentIndex(state.exercises)) { stopRest(); render(); } }
   else if (act==="rest") adjustRest(+btn.dataset.d);
+  else if (act==="chart-pt") showChartPoint(btn.dataset.c, +btn.dataset.i);
+  else if (act==="progress-range") { if (PROGRESS_RANGES[btn.dataset.r]) { ui.progressRange = btn.dataset.r; render(); } }
   else if (act==="day") { setDay(+btn.dataset.d); stopRest(); render(); }
   else if (act==="program") { setProgram(btn.dataset.id, 0); stopRest(); ui.panel="none"; toast(`${getProgram(btn.dataset.id).name} loaded`); render(); }
   else if (act==="settings-tab") { const tab=btn.dataset.tab; if (["program","sound","history","progress","backup","about"].includes(tab)) { ui.settingsTab=tab; render(); } }
