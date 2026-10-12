@@ -401,7 +401,7 @@ const PROGRAMS = [
         note: COSSACK_STAGES[0].note
       }),
       bb("sgm","Seated good morning",3,8,90,"Day A",{cap:12,note:"Bar on upper back, sit tall, hinge from the hips. Soft knees."}),
-      bw("bext","Back extension",3,10,60,"Day A",{finisher:true,note:"Light finisher: bodyweight, slow reps, short pause at the top. No kg added."}),
+      bw("bext","Back extension (twist)",3,10,60,"Day A",{finisher:true,note:"Rise, rotate to one side at the top, alternate sides each rep; slow, pause at top. Bodyweight, no kg."}),
     ]},
     {label:"B", exercises:[
       bb("rdl","RDL",3,8,120,"Day B"),
@@ -410,7 +410,7 @@ const PROGRAMS = [
       bw("psoas","Psoas march",3,8,45,"Day B",{cap:12,bilateral:true}),
       bw("lmr","Landmine rotation",3,8,60,"Day B",{cap:12,bilateral:true}),
       bw("heaves","Heaves",3,6,120,"Day B",{nocap:true,note:"Pull-ups or chin-ups. Clean reps; assist if needed."}),
-      bw("bext","Back extension",3,10,60,"Day B",{finisher:true,note:"Light finisher: bodyweight, slow reps, short pause at the top. No kg added."}),
+      bw("bext","Back extension (twist)",3,10,60,"Day B",{finisher:true,note:"Rise, rotate to one side at the top, alternate sides each rep; slow, pause at top. Bodyweight, no kg."}),
     ]},
   ]},
   {id:"titan", name:"TITAN PROTOCOL", blurb:"Marcus · junior ANVIL. A/B wave 6→8→10→12. Plate bench → bar at 10kg×12.", days:[
@@ -1231,7 +1231,7 @@ function load(){
       if (seed.heaveLadder) out = {...out, heaveLadder:true, levels: seed.levels};
       if (seed.benchLadder) out = {...out, benchLadder:true, levels: seed.levels};
       if (seed.cossackLadder) out = {...out, cossackLadder:true, bilateral:true, levels: seed.levels};
-      if (seed.finisher) out = {...out, finisher:true, note: seed.note, block: seed.block, cap: undefined, weight: Math.min(0, Number(out.weight)||0)};
+      if (seed.finisher) out = {...out, finisher:true, name: seed.name, note: seed.note, block: seed.block, cap: undefined, weight: Math.min(0, Number(out.weight)||0)};
       if (seed.id === "slrdl") out = {...out, bilateral:true, note: seed.note};
       return out;
     });
