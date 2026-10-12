@@ -180,7 +180,7 @@
 <input type="file" id="import-file" accept="application/json,.json" class="hide" />
 <script>
 const STORAGE = "anvil_app_v3";
-const APP_VERSION = "anvil-v37";
+const APP_VERSION = "anvil-v38";
 const CUE_LOUDNESS = 2.4;
 const CUE_MAX_GAIN = 0.95;
 const SET_OPTS = [1,2,3,4,5];
@@ -267,6 +267,7 @@ function fmtKg(w){
 function usesAmrap(ex){
   if (!ex || (ex.sets ?? 0) < 2) return false;
   if (isPlankSeconds(ex)) return false;
+  if (ex.finisher) return false;
   if (isHeaveLadder(ex) && (ex.levelIndex ?? 0) < HEAVE_STAGES.length - 1) return false;
   if (isCossackLadder(ex) && (ex.levelIndex ?? 0) < COSSACK_STAGES.length - 1) return false;
   return true;
@@ -394,12 +395,13 @@ const PROGRAMS = [
       bb("squat","Squat",3,8,120,"Day A"),
       bb("bench","Bench Press",3,8,120,"Day A"),
       bb("row","Bent over row",3,8,90,"Day A"),
-      bw("bext","Back extension",3,10,75,"Day A",{cap:14}),
+      bb("slrdl","Single-leg RDL",3,6,75,"Day A",{weight:5,bilateral:true,note:"Dumbbell. Reps are per leg. Soft knee, hips square, slow lower."}),
       bw("cossack", COSSACK_STAGES[0].name, 3, COSSACK_STAGES[0].startReps, 45, "Day A", {
         bilateral:true, cossackLadder:true, levels: COSSACK_STAGES.map(s=>s.name), levelIndex:0,
         note: COSSACK_STAGES[0].note
       }),
       bb("sgm","Seated good morning",3,8,90,"Day A",{cap:12,note:"Bar on upper back, sit tall, hinge from the hips. Soft knees."}),
+      bw("bext","Back extension",3,10,60,"Day A",{finisher:true,note:"Light finisher: bodyweight, slow reps, short pause at the top. No kg added."}),
     ]},
     {label:"B", exercises:[
       bb("rdl","RDL",3,8,120,"Day B"),
@@ -408,6 +410,7 @@ const PROGRAMS = [
       bw("psoas","Psoas march",3,8,45,"Day B",{cap:12,bilateral:true}),
       bw("lmr","Landmine rotation",3,8,60,"Day B",{cap:12,bilateral:true}),
       bw("heaves","Heaves",3,6,120,"Day B",{nocap:true,note:"Pull-ups or chin-ups. Clean reps; assist if needed."}),
+      bw("bext","Back extension",3,10,60,"Day B",{finisher:true,note:"Light finisher: bodyweight, slow reps, short pause at the top. No kg added."}),
     ]},
   ]},
   {id:"titan", name:"TITAN PROTOCOL", blurb:"Marcus · junior ANVIL. A/B wave 6→8→10→12. Plate bench → bar at 10kg×12.", days:[
@@ -608,7 +611,7 @@ function hydrate(raw){
     const sets = e.sets ?? 3;
     next.push({
       id:e.id, name:e.name, sets, rest:e.rest??90, weight:e.weight??0, reps:e.reps??8,
-      bw:e.bw, nocap:e.nocap, cap:e.cap, block:e.block??"Session", bilateral:e.bilateral, note:e.note,
+      bw:e.bw, nocap:e.nocap, cap:e.cap, block:e.block??"Session", bilateral:e.bilateral, note:e.note, finisher:e.finisher,
       heaveLadder:e.heaveLadder, benchLadder:e.benchLadder, cossackLadder:e.cossackLadder, levels:e.levels, levelIndex: e.levels?.length ? (e.levelIndex??0) : e.levelIndex,
       streak:e.streak??0, failStreak:e.failStreak??0, skipped:e.skipped??false,
       setsLog: e.setsLog && e.setsLog.length===sets ? e.setsLog : blankSets(sets),
@@ -1228,6 +1231,8 @@ function load(){
       if (seed.heaveLadder) out = {...out, heaveLadder:true, levels: seed.levels};
       if (seed.benchLadder) out = {...out, benchLadder:true, levels: seed.levels};
       if (seed.cossackLadder) out = {...out, cossackLadder:true, bilateral:true, levels: seed.levels};
+      if (seed.finisher) out = {...out, finisher:true, note: seed.note, block: seed.block, cap: undefined, weight: Math.min(0, Number(out.weight)||0)};
+      if (seed.id === "slrdl") out = {...out, bilateral:true, note: seed.note};
       return out;
     });
     // ANVIL Day A v30: programmed abd → cossack ladder (keep Add-on abd if no seed cossack)
@@ -1255,6 +1260,17 @@ function load(){
         }
       }
     }
+    // ANVIL v38 layout: reorder current day to seed order (Single-leg RDL A, Back extension last on A+B); keep extra add-ons after
+    let layoutChanged = false;
+    if (program.id === "anvil" && raw.anvilLayoutV38 !== true) {
+      const savedById = Object.fromEntries(baseExs.map(e => [e.id, e]));
+      const seedIds = new Set(seeded.map(e => e.id));
+      const ordered = seeded.map(se => savedById[se.id] || se);
+      const extras = baseExs.filter(e => !seedIds.has(e.id));
+      baseExs = [...ordered, ...extras];
+      layoutChanged = true;
+    }
+    if (liftProgress.bext && Number(liftProgress.bext.weight) > 0) liftProgress = {...liftProgress, bext:{...liftProgress.bext, weight:0}};
     const legacyCueDefault = raw.soundVolume === 0.7;
     const needsCueMigration = raw.loudCuesV33 !== true;
     state = {
@@ -1269,7 +1285,7 @@ function load(){
       cuePack: normalizeCuePack(raw.cuePack),
       loudCuesV33: true,
     };
-    if (normalizeWaveTargets() || needsCueMigration) save();
+    if (normalizeWaveTargets() || needsCueMigration || layoutChanged) save();
   } catch {}
 }
 function save(){
@@ -1278,7 +1294,7 @@ function save(){
     exercises: state.exercises, history: state.history, liftProgress: state.liftProgress,
     bodyWeightLog: state.bodyWeightLog || [],
     soundVolume: clampVolume(state.soundVolume), cuePack: normalizeCuePack(state.cuePack),
-    loudCuesV33: true,
+    loudCuesV33: true, anvilLayoutV38: true,
   }));
 }
 
@@ -1620,6 +1636,11 @@ function logSession(){
           reps = 20; streak = 0;
           notes.push(`${ex.name}: wave → 3×20s (no kg)`);
         }
+      } else if (ex.finisher) {
+        const step = nextWaveStep(reps, weight);
+        streak = 0;
+        if (step.weight > weight) notes.push(`${ex.name}: finisher — hold 3×${reps}, no kg`);
+        else { reps = step.reps; notes.push(`${ex.name}: ${step.note}`); }
       } else {
         const step = nextWaveStep(reps, weight);
         if (step.weight > weight) {
