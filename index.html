@@ -232,7 +232,7 @@
 <input type="file" id="import-file" accept="application/json,.json" class="hide" />
 <script>
 const STORAGE = "anvil_app_v3";
-const APP_VERSION = "anvil-v41";
+const APP_VERSION = "anvil-v42";
 const CUE_LOUDNESS = 2.4;
 const CUE_MAX_GAIN = 0.95;
 const SET_OPTS = [1,2,3,4,5];
@@ -949,6 +949,7 @@ function stopWalkSession(){
     walks.unshift({ date, durationSec, distanceKm, startedAt });
     if (walks.length > 500) walks.length = 500;
     saveWalks();
+    newLocalActivity();
     syncSoon();
     toast("Walk saved", `${fmtWalkDuration(durationSec)} · ${distanceKm.toFixed(2)} km`);
   } else {
@@ -1398,6 +1399,10 @@ function syncStatusText(){
 async function syncNow(manual){
   if (!SHEET_SYNC_URL) { if (manual) { syncCfg.status = "Sync not set up yet"; saveSync(); syncStatusRefresh(); } return; }
   if (!syncName()) { if (manual) { syncCfg.status = "Add a name first"; saveSync(); syncStatusRefresh(); } return; }
+  // Never let an empty phone overwrite the cloud copy.
+  if (localDataEmpty()) { if (manual) { syncCfg.status = "Nothing to sync yet"; saveSync(); syncStatusRefresh(); } return; }
+  // Just restored from cloud: wait for a new session/walk before auto-syncing.
+  if (syncCfg.holdAfterRestore && !manual) return;
   if (syncBusy) return;
   if (!navigator.onLine) { syncCfg.pending = true; syncCfg.status = "Offline — will retry"; saveSync(); syncStatusRefresh(); return; }
   syncBusy = true; syncCfg.status = "Syncing…"; syncStatusRefresh();
@@ -1425,8 +1430,12 @@ async function syncNow(manual){
   } finally { syncBusy = false; saveSync(); syncStatusRefresh(); }
 }
 function syncSoon(){ setTimeout(() => { syncNow(false); }, 800); }
+function newLocalActivity(){ if (syncCfg.holdAfterRestore) { syncCfg.holdAfterRestore = false; saveSync(); } }
+function localDataEmpty(){
+  return !(state?.history?.length) && !(walks?.length) && !(state?.bodyWeightLog?.length);
+}
 function syncIfStale(){
-  if (!SHEET_SYNC_URL || !syncName()) return;
+  if (!SHEET_SYNC_URL || !syncName() || syncCfg.holdAfterRestore) return;
   const age = syncCfg.lastSync ? Date.now() - new Date(syncCfg.lastSync).getTime() : Infinity;
   if (syncCfg.pending || age > 24*3600*1000) syncNow(false);
 }
@@ -1462,6 +1471,18 @@ function importBackup(){
         return;
       }
       if (!confirm("Replace all workout data with this backup? This cannot be undone.")) return;
+      applyBackup(raw);
+      toast("Backup restored");
+      render();
+    } catch {
+      toast("Import failed", "Could not read that JSON file.");
+    }
+  };
+  input.click();
+}
+
+// Shared by Import (file) and Restore from cloud. Walks are replaced only when the backup has them.
+function applyBackup(raw){
       localStorage.setItem(STORAGE, JSON.stringify({
         programId: raw.programId || "anvil",
         dayIndex: typeof raw.dayIndex === "number" ? raw.dayIndex : 0,
@@ -1473,17 +1494,67 @@ function importBackup(){
         cuePack: normalizeCuePack(raw.cuePack),
         loudCuesV33: true,
       }));
+      if (Array.isArray(raw.walks)) {
+        walks = raw.walks.filter(w => w && typeof w.date === "string" && typeof w.durationSec === "number").slice(0, 500);
+        saveWalks();
+      }
       load();
       stopRest();
       ui.panel = "none";
       ui.pending = null;
-      toast("Backup restored");
-      render();
-    } catch {
-      toast("Import failed", "Could not read that JSON file.");
+}
+
+// ---- Restore from cloud (reads the latest Raw copy back from the Google Sheet) ----
+const RESTORE_OFFER_KEY = "anvil-restore-offered-v1";
+function restoreOffered(){ try { return localStorage.getItem(RESTORE_OFFER_KEY) === "1"; } catch { return true; } }
+function markRestoreOffered(){ try { localStorage.setItem(RESTORE_OFFER_KEY, "1"); } catch {} }
+function showRestoreBanner(){ return !!SHEET_SYNC_URL && !ui.restoreBannerHidden && !restoreOffered() && localDataEmpty(); }
+function restoreNameValue(){
+  const el = document.querySelector("[data-restore-name]");
+  return String(ui.restoreName || (el && el.value) || syncName() || "").trim();
+}
+function restoreStatus(msg){ ui.restoreMsg = msg; document.querySelectorAll("[data-restore-status]").forEach(el => { el.textContent = msg; }); }
+async function restoreFromCloud(){
+  if (ui.restoreBusy) return;
+  if (!SHEET_SYNC_URL) { restoreStatus("Cloud sync isn’t set up yet"); return; }
+  const name = restoreNameValue();
+  ui.restoreName = name;
+  if (!name) { restoreStatus("Enter a name first"); return; }
+  if (!navigator.onLine) { restoreStatus("You’re offline — connect and try again"); return; }
+  ui.restoreBusy = true; restoreStatus("Checking cloud…");
+  try {
+    const res = await fetch(`${SHEET_SYNC_URL}?action=restore&name=${encodeURIComponent(name)}&t=${Date.now()}`, { method:"GET", redirect:"follow", cache:"no-store" });
+    if (!res.ok) throw new Error(`Error ${res.status}`);
+    let j = null; try { j = await res.json(); } catch { throw new Error("Couldn’t read the cloud reply"); }
+    if (!j || j.ok !== true) {
+      const err = j && j.error;
+      throw new Error(err === "unknown name" ? "Name must be Stewart, Alexis or Marcus"
+        : err === "no backup" ? `No cloud backup for ${name} yet`
+        : err === "unknown action" ? "Cloud script needs updating" : (err || "Restore failed"));
     }
-  };
-  input.click();
+    const data = (j.data && typeof j.data === "object") ? j.data : {};
+    const sessions = Array.isArray(data.history) ? data.history.length : 0;
+    const walkN = Array.isArray(data.walks) ? data.walks.length : 0;
+    const bwN = Array.isArray(data.bodyWeightLog) ? data.bodyWeightLog.length : 0;
+    if (!looksLikeAppState(data) || (!sessions && !walkN && !bwN)) throw new Error(`The cloud backup for ${j.name || name} is empty`);
+    const when = j.syncedAt ? fmtWhen(j.syncedAt) : "an unknown date";
+    const summary = `${sessions} session${sessions===1?"":"s"}${walkN ? ` · ${walkN} walk${walkN===1?"":"s"}` : ""}${bwN ? ` · ${bwN} weigh-in${bwN===1?"":"s"}` : ""}`;
+    restoreStatus(`Found ${j.name || name}’s backup from ${when}: ${summary}`);
+    if (!confirm(`Replace this phone's data with the cloud backup from ${when}?\n\n${j.name || name}: ${summary}.\nThis cannot be undone.`)) { restoreStatus("Restore cancelled"); return; }
+    applyBackup(data);
+    syncCfg.name = j.name || name;
+    syncCfg.holdAfterRestore = true; // don't push until a new session/walk is logged
+    syncCfg.pending = false;
+    syncCfg.status = "Restored from cloud";
+    saveSync();
+    markRestoreOffered();
+    ui.restoreBannerHidden = true;
+    ui.restoreMsg = `Restored ${summary} from ${when}`;
+    toast("Restored from cloud", summary);
+    render();
+  } catch (e) {
+    restoreStatus((e && e.message && !/fetch|network|load failed/i.test(e.message)) ? e.message : "Network error — try again");
+  } finally { ui.restoreBusy = false; }
 }
 
 function markSet(ei, si){
@@ -1822,6 +1893,7 @@ function logSession(){
   state.history = [{date:new Date().toISOString(), programId, day: dayLabel, notes, lifts}, ...state.history].slice(0,60);
   ui.pendingHolds = balanceHolds.length ? balanceHolds : null;
   save();
+  newLocalActivity();
   syncSoon();
   return notes;
 }
@@ -1990,6 +2062,7 @@ function saveBodyWeight(){
     state.history[0] = {...state.history[0], bodyWeightKg: kg};
   }
   state.bodyWeightLog = [{ date, kg }, ...(state.bodyWeightLog || [])].slice(0, 90);
+  newLocalActivity();
   save();
   toast("Body weight saved", `${kg} kg`);
   ui.bwLinkSession = false;
@@ -2498,6 +2571,14 @@ function render(){
         </div>
         <p class="note" style="margin-top:.75rem">Export downloads a JSON backup. Import overwrites local data from a previous file.</p>
       </section>
+      <section class="panel"><p class="tiny">Restore from cloud</p>
+        <label class="note" style="display:block;margin-top:.75rem">Name
+          <input data-restore-name type="text" autocomplete="off" placeholder="Stewart / Alexis / Marcus" value="${esc(ui.restoreName || syncName())}" style="width:100%;margin-top:.25rem;padding:.6rem;border-radius:.6rem;border:1px solid #444;background:transparent;color:inherit;font:inherit">
+        </label>
+        <button class="split" style="width:100%;margin-top:.75rem"><span class="primary" style="display:flex;width:100%;min-height:2.75rem;border-radius:.75rem;align-items:center;justify-content:center;font-weight:700" data-act="restore-cloud">Restore from cloud</span></button>
+        <p class="note" data-restore-status style="margin-top:.6rem">${esc(ui.restoreMsg || "")}</p>
+        <p class="note" style="margin-top:.4rem">Pulls your latest synced sessions, body weight and walks back from the Google Sheet — handy on a new phone. Replaces what’s on this phone.</p>
+      </section>
       <section class="panel"><p class="tiny">Sync</p>
         <label class="note" style="display:block;margin-top:.75rem">Name
           <input data-sync="name" type="text" autocomplete="off" placeholder="Stewart / Alexis / Marcus" value="${esc(syncName())}" style="width:100%;margin-top:.25rem;padding:.6rem;border-radius:.6rem;border:1px solid #444;background:transparent;color:inherit;font:inherit">
@@ -2577,6 +2658,15 @@ function render(){
     ? `<div class="help" style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap"><span style="color:var(--fg);font-weight:600">Update available</span><button class="install primary" data-act="apply-update">Update now</button></div>`
     : "";
 
+  const restoreBanner = showRestoreBanner()
+    ? `<div class="help"><span style="color:var(--fg);font-weight:600">Restore your progress from cloud?</span>
+        <label class="note" style="display:block;margin-top:.5rem">Name
+          <input data-restore-name type="text" autocomplete="off" placeholder="Stewart / Alexis / Marcus" value="${esc(ui.restoreName || syncName())}" style="width:100%;margin-top:.25rem;padding:.6rem;border-radius:.6rem;border:1px solid #444;background:transparent;color:inherit;font:inherit">
+        </label>
+        <div class="split" style="margin-top:.6rem"><button class="primary" data-act="restore-cloud">Restore</button><button data-act="restore-dismiss">Not now</button></div>
+        <p class="note" data-restore-status style="margin-top:.4rem">${esc(ui.restoreMsg || "")}</p></div>`
+    : "";
+
   const onWalk = ui.mainTab === "walk";
   const tabBar = `<nav class="tab-bar" aria-label="Main">
       <button type="button" data-act="main-tab" data-tab="workout" class="${onWalk?"":"on"}" aria-current="${onWalk?"false":"page"}">${I.workout} Workout</button>
@@ -2590,6 +2680,7 @@ function render(){
       <div style="display:flex;gap:.375rem"><button class="icon-btn" data-act="rest" data-d="-15">−</button>
       <button class="icon-btn" data-act="rest" data-d="15">+</button></div></div>`:""}
     ${updateBanner}
+    ${restoreBanner}
     ${hint}
     <div class="space">${cards}</div>
     <div class="split">
@@ -2642,6 +2733,8 @@ document.getElementById("app").addEventListener("change", (e) => {
 });
 
 document.getElementById("app").addEventListener("input", (e) => {
+  const rn = e.target.closest("[data-restore-name]");
+  if (rn) { ui.restoreName = rn.value.trim().slice(0, 40); return; }
   const el = e.target.closest("[data-act=vol]");
   if (!el) return;
   state.soundVolume = clampVolume((+el.value) / 100);
@@ -3308,6 +3401,8 @@ document.getElementById("app").addEventListener("click", (e) => {
   else if (act==="export") exportBackup();
   else if (act==="import") importBackup();
   else if (act==="sync-now") syncNow(true);
+  else if (act==="restore-cloud") restoreFromCloud();
+  else if (act==="restore-dismiss") { markRestoreOffered(); ui.restoreBannerHidden = true; render(); }
   else if (act==="check-update") checkForUpdate();
   else if (act==="apply-update") applyUpdate();
   else if (act==="cue-pack") { state.cuePack = normalizeCuePack(btn.dataset.id); save(); render(); }
