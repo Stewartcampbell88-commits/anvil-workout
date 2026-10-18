@@ -1376,7 +1376,7 @@ function looksLikeAppState(obj){
 
 // ---- Sync to Stewart's private Google Sheet (Apps Script web app, no key on the phone) ----
 // The /exec URL is unguessable; the script only accepts the names Stewart / Alexis / Marcus.
-const SHEET_SYNC_URL = "";
+const SHEET_SYNC_URL = "https://script.google.com/macros/s/AKfycbwXJL-PWyoeOJ9Y49HixIIJwY18kQNb80Fjzo5P27QqHeskt7-NjuMtL30qgZVii-Rs/exec";
 const SYNC_KEY = "anvil-sync-v1";
 const SYNC_PROGRAM_NAME = { anvil:"Stewart", ember:"Alexis", titan:"Marcus" };
 let syncCfg = { name:"", lastSync:null, status:"", pending:false };
