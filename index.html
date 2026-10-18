@@ -232,7 +232,7 @@
 <input type="file" id="import-file" accept="application/json,.json" class="hide" />
 <script>
 const STORAGE = "anvil_app_v3";
-const APP_VERSION = "anvil-v40";
+const APP_VERSION = "anvil-v41";
 const CUE_LOUDNESS = 2.4;
 const CUE_MAX_GAIN = 0.95;
 const SET_OPTS = [1,2,3,4,5];
@@ -1374,49 +1374,59 @@ function looksLikeAppState(obj){
   return Array.isArray(obj.exercises) || Array.isArray(obj.history) || Array.isArray(obj.bodyWeightLog) || typeof obj.programId === "string" || (obj.liftProgress && typeof obj.liftProgress === "object") || typeof obj.soundVolume === "number" || typeof obj.cuePack === "string";
 }
 
-// ---- Sync to private GitHub repo (token stays in this phone's localStorage only) ----
+// ---- Sync to Stewart's private Google Sheet (Apps Script web app, no key on the phone) ----
+// The /exec URL is unguessable; the script only accepts the names Stewart / Alexis / Marcus.
+const SHEET_SYNC_URL = "";
 const SYNC_KEY = "anvil-sync-v1";
-const SYNC_REPO = "Stewartcampbell88-commits/anvil-logs";
-let syncCfg = { name:"", token:"", lastSync:null, status:"", pending:false };
+const SYNC_PROGRAM_NAME = { anvil:"Stewart", ember:"Alexis", titan:"Marcus" };
+let syncCfg = { name:"", lastSync:null, status:"", pending:false };
 let syncBusy = false;
-function loadSync(){ try { syncCfg = {...syncCfg, ...(JSON.parse(localStorage.getItem(SYNC_KEY)||"{}"))}; } catch {} }
-function saveSync(){ try { localStorage.setItem(SYNC_KEY, JSON.stringify(syncCfg)); } catch {} }
-function syncSlug(){ return String(syncCfg.name||"").trim().toLowerCase().replace(/[^a-z0-9_-]+/g,"-").replace(/^-+|-+$/g,""); }
-function syncPayload(){
-  return { ...backupPayload(), name: String(syncCfg.name||"").trim(), walks: walks || [], appVersion: APP_VERSION, syncedAt: new Date().toISOString() };
+function loadSync(){
+  try { syncCfg = {...syncCfg, ...(JSON.parse(localStorage.getItem(SYNC_KEY)||"{}"))}; } catch {}
+  if (syncCfg.token) { delete syncCfg.token; saveSync(); } // drop old GitHub token from v39
 }
-function b64utf8(str){ const bytes = new TextEncoder().encode(str); let bin=""; for (let i=0;i<bytes.length;i+=0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i,i+0x8000)); return btoa(bin); }
+function saveSync(){ try { localStorage.setItem(SYNC_KEY, JSON.stringify(syncCfg)); } catch {} }
+function syncName(){ return String(syncCfg.name || SYNC_PROGRAM_NAME[state?.programId] || "").trim(); }
+function syncPayload(){
+  return { name: syncName(), appVersion: APP_VERSION, syncedAt: new Date().toISOString(), data: { ...backupPayload(), walks: walks || [] } };
+}
 function syncStatusRefresh(){ const el=document.querySelector("[data-sync-status]"); if (el) el.textContent = syncStatusText(); }
 function syncStatusText(){
   const last = syncCfg.lastSync ? `Last synced ${new Date(syncCfg.lastSync).toLocaleString()}` : "Never synced";
   return syncCfg.status ? `${last} · ${syncCfg.status}` : last;
 }
 async function syncNow(manual){
-  const slug = syncSlug();
-  if (!slug || !syncCfg.token) { if (manual) { syncCfg.status = "Add name and token first"; saveSync(); syncStatusRefresh(); } return; }
+  if (!SHEET_SYNC_URL) { if (manual) { syncCfg.status = "Sync not set up yet"; saveSync(); syncStatusRefresh(); } return; }
+  if (!syncName()) { if (manual) { syncCfg.status = "Add a name first"; saveSync(); syncStatusRefresh(); } return; }
   if (syncBusy) return;
   if (!navigator.onLine) { syncCfg.pending = true; syncCfg.status = "Offline — will retry"; saveSync(); syncStatusRefresh(); return; }
   syncBusy = true; syncCfg.status = "Syncing…"; syncStatusRefresh();
-  const url = `https://api.github.com/repos/${SYNC_REPO}/contents/logs/${slug}.json`;
-  const headers = { "Authorization": `Bearer ${syncCfg.token}`, "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
+  // text/plain = "simple" request, so no CORS preflight (Apps Script can't answer OPTIONS)
+  const body = JSON.stringify(syncPayload());
+  const opts = { method:"POST", headers:{ "Content-Type":"text/plain;charset=utf-8" }, body, redirect:"follow", cache:"no-store" };
   try {
-    let sha;
-    const g = await fetch(url, { headers, cache:"no-store" });
-    if (g.ok) sha = (await g.json()).sha;
-    else if (g.status !== 404) throw new Error(g.status === 401 ? "Token rejected" : g.status === 403 ? "Token lacks access" : `Error ${g.status}`);
-    const body = { message: `${syncCfg.name.trim()} sync ${new Date().toISOString()}`, content: b64utf8(JSON.stringify(syncPayload(), null, 2)) };
-    if (sha) body.sha = sha;
-    const r = await fetch(url, { method:"PUT", headers:{...headers, "Content-Type":"application/json"}, body: JSON.stringify(body) });
-    if (!r.ok) throw new Error(r.status === 401 ? "Token rejected" : r.status === 409 ? "Conflict — will retry" : `Error ${r.status}`);
-    syncCfg.lastSync = new Date().toISOString(); syncCfg.pending = false; syncCfg.status = "";
+    let res = null;
+    try { res = await fetch(SHEET_SYNC_URL, opts); }
+    catch (e) {
+      // Response unreadable (CORS on the redirect) — resend blind; Apps Script still records it.
+      await fetch(SHEET_SYNC_URL, {...opts, mode:"no-cors"});
+      res = null;
+    }
+    if (res) {
+      if (!res.ok) throw new Error(`Error ${res.status}`);
+      let j = null; try { j = await res.json(); } catch {}
+      if (j && j.ok === false) throw new Error(j.error === "unknown name" ? "Name must be Stewart, Alexis or Marcus" : (j.error || "Rejected"));
+      syncCfg.status = "";
+    } else syncCfg.status = "Sent";
+    syncCfg.lastSync = new Date().toISOString(); syncCfg.pending = false;
   } catch (e) {
     syncCfg.pending = true;
-    syncCfg.status = (e && e.message && !/fetch/i.test(e.message)) ? e.message : "Network error — will retry";
+    syncCfg.status = (e && e.message && !/fetch|network|load failed/i.test(e.message)) ? `${e.message} — will retry` : "Network error — will retry";
   } finally { syncBusy = false; saveSync(); syncStatusRefresh(); }
 }
 function syncSoon(){ setTimeout(() => { syncNow(false); }, 800); }
 function syncIfStale(){
-  if (!syncCfg.token || !syncSlug()) return;
+  if (!SHEET_SYNC_URL || !syncName()) return;
   const age = syncCfg.lastSync ? Date.now() - new Date(syncCfg.lastSync).getTime() : Infinity;
   if (syncCfg.pending || age > 24*3600*1000) syncNow(false);
 }
@@ -1604,7 +1614,7 @@ function logSession(){
     const lastSet = setsLog[setsLog.length - 1];
     const lastReps = lastSet?.reps ?? ex.reps;
     const amrapHit = usesAmrap(ex) && clean && lastReps >= ex.reps + AMRAP_BONUS;
-    const liftEntry = { id: ex.id, name: ex.name, weight: workedWeight, reps: workedReps, clean };
+    const liftEntry = { id: ex.id, name: ex.name, weight: workedWeight, reps: workedReps, clean, sets: setsLog.map(s => ({ok:!!s.ok, miss:!!s.miss, reps:s.reps ?? null})) };
     if (usesAmrap(ex)) liftEntry.amrapReps = lastReps;
     lifts.push(liftEntry);
     if (!all) { notes.push(`${ex.name}: incomplete`); return {...ex, setsLog: blankSets(ex.sets)}; }
@@ -1808,7 +1818,8 @@ function logSession(){
   });
   state.exercises = exercises;
   state.liftProgress = captureProgress(exercises, state.liftProgress);
-  state.history = [{date:new Date().toISOString(), notes, lifts}, ...state.history].slice(0,60);
+  const dayLabel = getProgram(programId)?.days?.[state.dayIndex]?.label || "";
+  state.history = [{date:new Date().toISOString(), programId, day: dayLabel, notes, lifts}, ...state.history].slice(0,60);
   ui.pendingHolds = balanceHolds.length ? balanceHolds : null;
   save();
   syncSoon();
@@ -2489,14 +2500,12 @@ function render(){
       </section>
       <section class="panel"><p class="tiny">Sync</p>
         <label class="note" style="display:block;margin-top:.75rem">Name
-          <input data-sync="name" type="text" autocomplete="off" placeholder="Stewart / Alexis / Marcus" value="${esc(syncCfg.name||"")}" style="width:100%;margin-top:.25rem;padding:.6rem;border-radius:.6rem;border:1px solid #444;background:transparent;color:inherit;font:inherit">
+          <input data-sync="name" type="text" autocomplete="off" placeholder="Stewart / Alexis / Marcus" value="${esc(syncName())}" style="width:100%;margin-top:.25rem;padding:.6rem;border-radius:.6rem;border:1px solid #444;background:transparent;color:inherit;font:inherit">
         </label>
-        <label class="note" style="display:block;margin-top:.6rem">GitHub token
-          <input data-sync="token" type="password" autocomplete="off" spellcheck="false" placeholder="${syncCfg.token ? "•••••••• saved" : "github_pat_…"}" value="" style="width:100%;margin-top:.25rem;padding:.6rem;border-radius:.6rem;border:1px solid #444;background:transparent;color:inherit;font:inherit">
-        </label>
+        
         <button class="split" style="width:100%;margin-top:.75rem"><span class="primary" style="display:flex;width:100%;min-height:2.75rem;border-radius:.75rem;align-items:center;justify-content:center;font-weight:700" data-act="sync-now">Sync now</span></button>
         <p class="note" data-sync-status style="margin-top:.6rem">${esc(syncStatusText())}</p>
-        <p class="note" style="margin-top:.4rem">Auto-syncs after each session, each walk, and daily on open. Token stays on this phone only.</p>
+        <p class="note" style="margin-top:.4rem">Auto-syncs to Stewart's private Google Sheet after each session, each walk, and daily on open. No sign-in needed.</p>
       </section>`;
   } else {
     const updateBtn = ui.updateReady
@@ -2629,7 +2638,6 @@ document.getElementById("app").addEventListener("change", (e) => {
   const f = e.target.closest("[data-sync]");
   if (!f) return;
   if (f.dataset.sync === "name") syncCfg.name = f.value.trim().slice(0, 40);
-  else if (f.dataset.sync === "token") { const t = f.value.trim(); if (t) { syncCfg.token = t; f.value = ""; f.placeholder = "•••••••• saved"; } }
   syncCfg.status = ""; saveSync(); syncStatusRefresh();
 });
 
