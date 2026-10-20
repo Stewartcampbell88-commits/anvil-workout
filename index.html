@@ -232,7 +232,7 @@
 <input type="file" id="import-file" accept="application/json,.json" class="hide" />
 <script>
 const STORAGE = "anvil_app_v3";
-const APP_VERSION = "anvil-v42";
+const APP_VERSION = "anvil-v43";
 const CUE_LOUDNESS = 2.4;
 const CUE_MAX_GAIN = 0.95;
 const SET_OPTS = [1,2,3,4,5];
@@ -1387,9 +1387,21 @@ function loadSync(){
   if (syncCfg.token) { delete syncCfg.token; saveSync(); } // drop old GitHub token from v39
 }
 function saveSync(){ try { localStorage.setItem(SYNC_KEY, JSON.stringify(syncCfg)); } catch {} }
+// Trusted-phone token(s) from the cloud script, per name ({stewart:"uuid"}). Lets this phone restore
+// without the family PIN. Own key: never part of Export/Import backups or the synced log.
+const SYNC_TOKEN_KEY = "anvil_sync_token_v1";
+function tokenMap(){ try { const m = JSON.parse(localStorage.getItem(SYNC_TOKEN_KEY) || "{}"); return (m && typeof m === "object" && !Array.isArray(m)) ? m : {}; } catch { return {}; } }
+function deviceToken(name){ const t = tokenMap()[String(name || "").trim().toLowerCase()]; return typeof t === "string" && /^[0-9a-f-]{32,64}$/i.test(t) ? t : ""; }
+function setDeviceToken(name, token){
+  const k = String(name || "").trim().toLowerCase(); if (!k) return;
+  const m = tokenMap();
+  if (token && /^[0-9a-f-]{32,64}$/i.test(token)) m[k] = String(token); else delete m[k];
+  try { localStorage.setItem(SYNC_TOKEN_KEY, JSON.stringify(m)); } catch {}
+}
 function syncName(){ return String(syncCfg.name || SYNC_PROGRAM_NAME[state?.programId] || "").trim(); }
 function syncPayload(){
-  return { name: syncName(), appVersion: APP_VERSION, syncedAt: new Date().toISOString(), data: { ...backupPayload(), walks: walks || [] } };
+  const name = syncName(), tok = deviceToken(name);
+  return { name, appVersion: APP_VERSION, syncedAt: new Date().toISOString(), wantToken: true, ...(tok ? { deviceToken: tok } : {}), data: { ...backupPayload(), walks: walks || [] } };
 }
 function syncStatusRefresh(){ const el=document.querySelector("[data-sync-status]"); if (el) el.textContent = syncStatusText(); }
 function syncStatusText(){
@@ -1421,6 +1433,7 @@ async function syncNow(manual){
       if (!res.ok) throw new Error(`Error ${res.status}`);
       let j = null; try { j = await res.json(); } catch {}
       if (j && j.ok === false) throw new Error(j.error === "unknown name" ? "Name must be Stewart, Alexis or Marcus" : (j.error || "Rejected"));
+      if (j && typeof j.deviceToken === "string") setDeviceToken(j.person || syncName(), j.deviceToken);
       syncCfg.status = "";
     } else syncCfg.status = "Sent";
     syncCfg.lastSync = new Date().toISOString(); syncCfg.pending = false;
@@ -1518,6 +1531,13 @@ function restorePinValue(){
   const el = document.querySelector("[data-restore-pin]");
   return String(ui.restorePin || (el && el.value) || "").replace(/\D/g, "").slice(0, 6);
 }
+function restoreTrusted(){ return !ui.restoreNeedPin && !!deviceToken(restoreNameValue()); }
+function restorePinField(mt){
+  if (restoreTrusted()) return `<p class="note" style="margin-top:${mt}">✓ This phone is trusted — no PIN needed</p>`;
+  return `<label class="note" style="display:block;margin-top:${mt}">Family PIN
+          <input data-restore-pin type="password" inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="6" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="4–6 digits" value="${esc(ui.restorePin || "")}" style="width:100%;margin-top:.25rem;padding:.6rem;border-radius:.6rem;border:1px solid #444;background:transparent;color:inherit;font:inherit;letter-spacing:.2em">
+        </label>`;
+}
 function restoreStatus(msg){ ui.restoreMsg = msg; document.querySelectorAll("[data-restore-status]").forEach(el => { el.textContent = msg; }); }
 async function restoreFromCloud(){
   if (ui.restoreBusy) return;
@@ -1525,16 +1545,27 @@ async function restoreFromCloud(){
   const name = restoreNameValue();
   ui.restoreName = name;
   if (!name) { restoreStatus("Enter a name first"); return; }
-  const pin = restorePinValue();
-  if (!/^\d{4,6}$/.test(pin)) { restoreStatus("Enter the family PIN (4–6 digits)"); return; }
+  // Trusted phone: use its token, no PIN. Otherwise (or if the token was refused) the PIN is needed.
+  const tok = ui.restoreNeedPin ? "" : deviceToken(name);
+  const pin = tok ? "" : restorePinValue();
+  if (!tok && !/^\d{4,6}$/.test(pin)) {
+    if (!document.querySelector("[data-restore-pin]")) { ui.restoreNeedPin = true; ui.restoreMsg = `Enter the family PIN for ${name}`; render(); return; }
+    restoreStatus("Enter the family PIN (4–6 digits)"); return;
+  }
   if (!navigator.onLine) { restoreStatus("You’re offline — connect and try again"); return; }
   ui.restoreBusy = true; restoreStatus("Checking cloud…");
   try {
-    const res = await fetch(`${SHEET_SYNC_URL}?action=restore&name=${encodeURIComponent(name)}&pin=${encodeURIComponent(pin)}&t=${Date.now()}`, { method:"GET", redirect:"follow", cache:"no-store" });
+    const cred = tok ? `token=${encodeURIComponent(tok)}` : `pin=${encodeURIComponent(pin)}`;
+    const res = await fetch(`${SHEET_SYNC_URL}?action=restore&name=${encodeURIComponent(name)}&${cred}&t=${Date.now()}`, { method:"GET", redirect:"follow", cache:"no-store" });
     if (!res.ok) throw new Error(`Error ${res.status}`);
     let j = null; try { j = await res.json(); } catch { throw new Error("Couldn’t read the cloud reply"); }
+    if (j && j.ok === true && typeof j.deviceToken === "string") setDeviceToken(j.name || name, j.deviceToken); // PIN accepted → trust this phone
     if (!j || j.ok !== true) {
       const err = j && j.error;
+      if (err === "bad token") { // trust revoked/expired: forget it and ask for the PIN
+        setDeviceToken(name, ""); ui.restoreNeedPin = true; ui.restoreMsg = "This phone isn’t trusted any more — enter the family PIN";
+        render(); return;
+      }
       throw new Error(err === "unknown name" ? "Name must be Stewart, Alexis or Marcus"
         : err === "no backup" ? `No cloud backup for ${name} yet`
         : err === "wrong pin" ? "Wrong family PIN — check it and try again"
@@ -1560,6 +1591,7 @@ async function restoreFromCloud(){
     markRestoreOffered();
     ui.restoreBannerHidden = true;
     ui.restorePin = "";
+    ui.restoreNeedPin = false;
     ui.restoreMsg = `Restored ${summary} from ${when}`;
     toast("Restored from cloud", summary);
     render();
@@ -2589,12 +2621,10 @@ function render(){
         <label class="note" style="display:block;margin-top:.75rem">Name
           <input data-restore-name type="text" autocomplete="off" placeholder="Stewart / Alexis / Marcus" value="${esc(ui.restoreName || syncName())}" style="width:100%;margin-top:.25rem;padding:.6rem;border-radius:.6rem;border:1px solid #444;background:transparent;color:inherit;font:inherit">
         </label>
-        <label class="note" style="display:block;margin-top:.6rem">Family PIN
-          <input data-restore-pin type="password" inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="6" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="4–6 digits" value="${esc(ui.restorePin || "")}" style="width:100%;margin-top:.25rem;padding:.6rem;border-radius:.6rem;border:1px solid #444;background:transparent;color:inherit;font:inherit;letter-spacing:.2em">
-        </label>
+${restorePinField(".6rem")}
         <button class="split" style="width:100%;margin-top:.75rem"><span class="primary" style="display:flex;width:100%;min-height:2.75rem;border-radius:.75rem;align-items:center;justify-content:center;font-weight:700" data-act="restore-cloud">Restore from cloud</span></button>
         <p class="note" data-restore-status style="margin-top:.6rem">${esc(ui.restoreMsg || "")}</p>
-        <p class="note" style="margin-top:.4rem">Pulls your latest synced sessions, body weight and walks back from the Google Sheet — handy on a new phone. Needs the family PIN (not saved on this phone). Replaces what’s on this phone.</p>
+        <p class="note" style="margin-top:.4rem">Pulls your latest synced sessions, body weight and walks back from the Google Sheet — handy on a new phone. ${restoreTrusted() ? "This phone is trusted, so no PIN is needed." : "Needs the family PIN once (the PIN itself is never saved on this phone)."} Replaces what’s on this phone.</p>
       </section>
       <section class="panel"><p class="tiny">Sync</p>
         <label class="note" style="display:block;margin-top:.75rem">Name
@@ -2680,9 +2710,7 @@ function render(){
         <label class="note" style="display:block;margin-top:.5rem">Name
           <input data-restore-name type="text" autocomplete="off" placeholder="Stewart / Alexis / Marcus" value="${esc(ui.restoreName || syncName())}" style="width:100%;margin-top:.25rem;padding:.6rem;border-radius:.6rem;border:1px solid #444;background:transparent;color:inherit;font:inherit">
         </label>
-        <label class="note" style="display:block;margin-top:.5rem">Family PIN
-          <input data-restore-pin type="password" inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="6" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="4–6 digits" value="${esc(ui.restorePin || "")}" style="width:100%;margin-top:.25rem;padding:.6rem;border-radius:.6rem;border:1px solid #444;background:transparent;color:inherit;font:inherit;letter-spacing:.2em">
-        </label>
+${restorePinField(".5rem")}
         <div class="split" style="margin-top:.6rem"><button class="primary" data-act="restore-cloud">Restore</button><button data-act="restore-dismiss">Not now</button></div>
         <p class="note" data-restore-status style="margin-top:.4rem">${esc(ui.restoreMsg || "")}</p></div>`
     : "";
@@ -2754,7 +2782,7 @@ document.getElementById("app").addEventListener("change", (e) => {
 
 document.getElementById("app").addEventListener("input", (e) => {
   const rn = e.target.closest("[data-restore-name]");
-  if (rn) { ui.restoreName = rn.value.trim().slice(0, 40); return; }
+  if (rn) { const was = restoreTrusted(); ui.restoreName = rn.value.trim().slice(0, 40); if (was !== restoreTrusted()) { render(); const n = document.querySelector("[data-restore-name]"); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } } return; }
   const rp = e.target.closest("[data-restore-pin]");
   if (rp) { const v = rp.value.replace(/\D/g, "").slice(0, 6); if (v !== rp.value) rp.value = v; ui.restorePin = v; return; }
   const el = e.target.closest("[data-act=vol]");
