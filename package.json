@@ -1,0 +1,11 @@
+{
+  "name": "anvil-workout",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 --test-reporter=spec tests/"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^24.0.0"
+  }
+}
