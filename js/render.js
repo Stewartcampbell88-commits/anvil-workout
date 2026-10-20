@@ -249,7 +249,10 @@ function render(){
         ${walks.length ? walkChart : `<p class="chart-empty">No walks yet — use the Walk tab.</p>`}
       </section>`;
   } else if (settingsTab === "backup") {
-    settingsDetail = `<section class="panel"><p class="tiny">Backup</p>
+    settingsDetail = `${ANVIL_PREVIEW ? `<section class="panel"><p class="tiny">Preview</p>
+        <p class="note" style="margin-top:.5rem">This is a test copy of ANVIL. It keeps its own data, never syncs to the Google Sheet, and never changes your real app.</p>
+        <button class="split" style="width:100%;margin-top:.75rem"><span class="primary" style="display:flex;width:100%;min-height:2.75rem;border-radius:.75rem;align-items:center;justify-content:center;font-weight:700" data-act="copy-live">Copy my real data into Preview</span></button>
+      </section>` : ""}<section class="panel"><p class="tiny">Backup</p>
         <div class="split" style="margin-top:.75rem">
           <button data-act="export">Export</button>
           <button data-act="import">Import</button>
@@ -384,7 +387,7 @@ ${restorePinField(".5rem")}
 
   const headTitle = onWalk
     ? `<div class="head-title">${I.walk}<h1>WALK</h1></div><p class="sub muted">${walk.active ? "Walking…" : "Track a walk"}</p>`
-    : `<div class="head-title">${I.anvil}<h1>${esc(program.name)}</h1></div><p class="sub muted">${esc(sub)}</p>`;
+    : `<div class="head-title">${I.anvil}<h1>${esc(program.name)}</h1>${ANVIL_PREVIEW ? `<span class="tiny" style="color:var(--warn)">Preview</span>` : ""}</div><p class="sub muted">${esc(sub)}</p>`;
 
   const app = document.getElementById("app");
   app.classList.add("has-tabs");

@@ -65,6 +65,7 @@ document.getElementById("app").addEventListener("click", (e) => {
   else if (act==="import") importBackup();
   else if (act==="sync-now") syncNow(true);
   else if (act==="restore-cloud") restoreFromCloud();
+  else if (act==="copy-live") copyLiveIntoPreview();
   else if (act==="restore-dismiss") { markRestoreOffered(); ui.restoreBannerHidden = true; render(); }
   else if (act==="check-update") checkForUpdate();
   else if (act==="apply-update") applyUpdate();

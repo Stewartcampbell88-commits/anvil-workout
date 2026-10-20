@@ -1,17 +1,22 @@
-const CACHE = "anvil-v43";
+const CACHE = "anvil-v44";
+// The /preview/ copy runs on the same origin as live, and Cache Storage is per origin: give it its own
+// cache names and make each flavour delete only its own old caches.
+const PREVIEW = self.location.pathname.includes("/preview/");
+const CACHE_NAME = PREVIEW ? "anvil-preview-" + CACHE : CACHE;
+const mine = (k) => PREVIEW ? k.startsWith("anvil-preview-") : !k.startsWith("anvil-preview-");
 const SHELL = [
   "./",
   "./index.html",
-  "./css/app.css?v=anvil-v43",
-  "./js/core.js?v=anvil-v43",
-  "./js/walk.js?v=anvil-v43",
-  "./js/audio.js?v=anvil-v43",
-  "./js/state.js?v=anvil-v43",
-  "./js/session.js?v=anvil-v43",
-  "./js/progress.js?v=anvil-v43",
-  "./js/render.js?v=anvil-v43",
-  "./js/howto.js?v=anvil-v43",
-  "./js/main.js?v=anvil-v43",
+  "./css/app.css?v=anvil-v44",
+  "./js/core.js?v=anvil-v44",
+  "./js/walk.js?v=anvil-v44",
+  "./js/audio.js?v=anvil-v44",
+  "./js/state.js?v=anvil-v44",
+  "./js/session.js?v=anvil-v44",
+  "./js/progress.js?v=anvil-v44",
+  "./js/render.js?v=anvil-v44",
+  "./js/howto.js?v=anvil-v44",
+  "./js/main.js?v=anvil-v44",
   "./manifest.json",
   "./icon-192.png",
   "./icon-512.png",
@@ -25,11 +30,11 @@ const SHELL = [
   "./sounds/go-adult.mp3",
 ];
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL).catch(() => c.addAll(["./", "./index.html"]))));
+  event.waitUntil(caches.open(CACHE_NAME).then((c) => c.addAll(SHELL).catch(() => c.addAll(["./", "./index.html"]))));
   self.skipWaiting();
 });
 self.addEventListener("activate", (event) => {
-  event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
+  event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME && mine(k)).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
 });
 self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
@@ -42,9 +47,9 @@ self.addEventListener("fetch", (event) => {
     fetch(event.request).then((res) => {
       if (res.ok) {
         const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(event.request, copy));
+        caches.open(CACHE_NAME).then((c) => c.put(event.request, copy));
       }
       return res;
-    }).catch(() => caches.match(event.request).then((hit) => hit || caches.match("./index.html") || caches.match("./")))
+    }).catch(() => caches.open(CACHE_NAME).then(async (c) => (await c.match(event.request)) || (event.request.mode === "navigate" && ((await c.match("./index.html")) || (await c.match("./")))) || Response.error()))
   );
 });

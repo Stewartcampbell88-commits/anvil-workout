@@ -5,6 +5,8 @@ import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
 import crypto from "node:crypto";
+import os from "node:os";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
 
@@ -16,7 +18,9 @@ const MIME = { ".html":"text/html", ".js":"text/javascript", ".mjs":"text/javasc
   ".png":"image/png", ".svg":"image/svg+xml", ".mp3":"audio/mpeg", ".webmanifest":"application/manifest+json" };
 
 export function startServer(root = ROOT){
+  const box = { root };
   const server = http.createServer((req, res) => {
+    const root = box.root;
     let p = decodeURIComponent(new URL(req.url, "http://x").pathname);
     if (p.endsWith("/")) p += "index.html";
     const file = path.join(root, p);
@@ -24,7 +28,7 @@ export function startServer(root = ROOT){
     res.writeHead(200, { "Content-Type": MIME[path.extname(file)] || "application/octet-stream", "Cache-Control": "no-store" });
     fs.createReadStream(file).pipe(res);
   });
-  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ server, url: `http://127.0.0.1:${server.address().port}/` })));
+  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ server, url: `http://127.0.0.1:${server.address().port}/`, setRoot(r){ box.root = r; } })));
 }
 
 let browserP = null;
@@ -149,6 +153,22 @@ export async function openApp(baseUrl, opts = {}){
   await page.goto(baseUrl + (opts.path || ""), { waitUntil: "load" });
   await page.waitForFunction(() => !!document.querySelector("#app header"), { timeout: 10000 });
   return { page, context, errors, net, gas, async close(){ await context.close(); } };
+}
+
+/** A served copy of the app with the /preview/ build next to it (like Pages would after publish-preview). */
+export function previewSite(){
+  const t = fs.mkdtempSync(path.join(os.tmpdir(), "anvil-site-"));
+  for (const f of ["index.html", "sw.js", "manifest.json", "favicon.svg", "icon.svg", "icon-192.png", "icon-192-maskable.png", "icon-512.png", "icon-512-maskable.png"]) fs.copyFileSync(path.join(ROOT, f), path.join(t, f));
+  for (const d of ["css", "js", "sounds"]) fs.cpSync(path.join(ROOT, d), path.join(t, d), { recursive: true });
+  execFileSync(path.join(ROOT, "scripts", "make-preview.sh"), [path.join(t, "preview")], { stdio: "ignore" });
+  return t;
+}
+
+/** The app exactly as it is live today (a git revision), for update tests. */
+export function gitTree(rev){
+  const t = fs.mkdtempSync(path.join(os.tmpdir(), "anvil-old-"));
+  execFileSync("bash", ["-c", `git -C "${ROOT}" archive ${rev} | tar -x -C "${t}"`]);
+  return t;
 }
 
 export async function reload(app){

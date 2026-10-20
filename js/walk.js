@@ -1,6 +1,6 @@
 // ANVIL · Walk tab: timer, GPS distance (Haversine), weekly strip. Storage key anvil_walks_v1.
 // Classic script (shared global scope, no build step); load order is set in index.html.
-const WALK_STORAGE = "anvil_walks_v1";
+const WALK_STORAGE = K("anvil_walks_v1");
 const WALK_MIN_SAVE_SEC = 30;
 const WALK_MIN_MOVE_M = 6;
 const WALK_MAX_ACC_M = 50;
@@ -27,7 +27,7 @@ function saveWalks(){
   try { localStorage.setItem(WALK_STORAGE, JSON.stringify(walks)); } catch {}
 }
 // A walk in progress is kept on disk too, so closing/reloading the app (or Update now) mid-walk doesn't lose it.
-const WALK_ACTIVE_KEY = "anvil_walk_active_v1";
+const WALK_ACTIVE_KEY = K("anvil_walk_active_v1");
 function persistActiveWalk(){
   try {
     if (!walk.active || !walk.startedAt) { localStorage.removeItem(WALK_ACTIVE_KEY); return; }

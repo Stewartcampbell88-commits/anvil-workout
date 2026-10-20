@@ -195,8 +195,8 @@ function looksLikeAppState(obj){
 
 // ---- Sync to Stewart's private Google Sheet (Apps Script web app, no key on the phone) ----
 // The /exec URL is unguessable; the script only accepts the names Stewart / Alexis / Marcus.
-const SHEET_SYNC_URL = "https://script.google.com/macros/s/AKfycbwXJL-PWyoeOJ9Y49HixIIJwY18kQNb80Fjzo5P27QqHeskt7-NjuMtL30qgZVii-Rs/exec";
-const SYNC_KEY = "anvil-sync-v1";
+const SHEET_SYNC_URL = ANVIL_PREVIEW ? "" : "https://script.google.com/macros/s/AKfycbwXJL-PWyoeOJ9Y49HixIIJwY18kQNb80Fjzo5P27QqHeskt7-NjuMtL30qgZVii-Rs/exec";
+const SYNC_KEY = K("anvil-sync-v1");
 const SYNC_PROGRAM_NAME = { anvil:"Stewart", ember:"Alexis", titan:"Marcus" };
 let syncCfg = { name:"", lastSync:null, status:"", pending:false };
 let syncBusy = false;
@@ -207,7 +207,7 @@ function loadSync(){
 function saveSync(){ try { localStorage.setItem(SYNC_KEY, JSON.stringify(syncCfg)); } catch {} }
 // Trusted-phone token(s) from the cloud script, per name ({stewart:"uuid"}). Lets this phone restore
 // without the family PIN. Own key: never part of Export/Import backups or the synced log.
-const SYNC_TOKEN_KEY = "anvil_sync_token_v1";
+const SYNC_TOKEN_KEY = K("anvil_sync_token_v1");
 function tokenMap(){ try { const m = JSON.parse(localStorage.getItem(SYNC_TOKEN_KEY) || "{}"); return (m && typeof m === "object" && !Array.isArray(m)) ? m : {}; } catch { return {}; } }
 function deviceToken(name){ const t = tokenMap()[String(name || "").trim().toLowerCase()]; return typeof t === "string" && /^[0-9a-f-]{32,64}$/i.test(t) ? t : ""; }
 function setDeviceToken(name, token){
@@ -339,8 +339,22 @@ function applyBackup(raw){
       ui.pending = null;
 }
 
+// Preview only: one-way copy of the live app's data (same origin) into the preview's own keys. Never writes live keys.
+function copyLiveIntoPreview(){
+  if (!ANVIL_PREVIEW) return false;
+  let st = null, wk = null;
+  try { st = JSON.parse(localStorage.getItem("anvil_app_v3") || "null"); } catch {}
+  try { wk = JSON.parse(localStorage.getItem("anvil_walks_v1") || "null"); } catch {}
+  if (!looksLikeAppState(st)) { toast("No live ANVIL data in this browser", "Open the preview in the same browser as the app"); return false; }
+  if (!confirm("Copy your real ANVIL data into the Preview? Your real app is not changed.")) return false;
+  applyBackup({ ...st, ...(Array.isArray(wk) ? { walks: wk } : {}) });
+  toast("Copied into Preview", `${(st.history || []).length} sessions`);
+  render();
+  return true;
+}
+
 // ---- Restore from cloud (reads the latest Raw copy back from the Google Sheet) ----
-const RESTORE_OFFER_KEY = "anvil-restore-offered-v1";
+const RESTORE_OFFER_KEY = K("anvil-restore-offered-v1");
 function restoreOffered(){ try { return localStorage.getItem(RESTORE_OFFER_KEY) === "1"; } catch { return true; } }
 function markRestoreOffered(){ try { localStorage.setItem(RESTORE_OFFER_KEY, "1"); } catch {} }
 function showRestoreBanner(){ return !!SHEET_SYNC_URL && !ui.restoreBannerHidden && !restoreOffered() && localDataEmpty(); }

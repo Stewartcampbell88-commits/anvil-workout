@@ -4,13 +4,32 @@ ANVIL is a lightweight home-gym workout tracker packaged as a Progressive Web Ap
 
 ## What’s in the box
 
+No build step: plain classic `<script src>` files that share one global scope, loaded in this order by `index.html`.
+
 | File | Role |
 |------|------|
-| `index.html` | Full app UI + logic (programs, session tracking, history) |
-| `sw.js` | Offline service worker (`anvil-v19` cache) |
-| `manifest.json` | PWA install metadata |
-| Icons / favicon | App icons for install and home screen |
-| `sounds/*.mp3` | Rest-timer tones packs use Web Audio; voice packs use real en-AU clips (William) |
+| `index.html` | Page shell; loads `css/app.css` and `js/*.js` (each with `?v=<APP_VERSION>`) |
+| `css/app.css` | All styles |
+| `js/core.js` | `APP_VERSION`, storage-key helper, programs (Day A/B lists), ladders, wave + balance-chain helpers |
+| `js/walk.js` | Walk tab (timer, GPS distance, weekly strip) |
+| `js/audio.js` | Rest-timer cues |
+| `js/state.js` | State, load/save + migrations, safety copies, Sheet sync, Export/Import, Restore from cloud |
+| `js/session.js` | Set logging, progression, rest timer, updates, body weight |
+| `js/progress.js` | Progress charts |
+| `js/render.js` | Screen rendering |
+| `js/howto.js` | How-to sheets + animations |
+| `js/main.js` | Event wiring, startup, service worker registration (loaded last) |
+| `sw.js` | Offline service worker; `CACHE` must equal `APP_VERSION`; precaches every file above |
+| `backend/Code.gs` | Google Apps Script sync/restore backend (copy of what is deployed; deploy by hand) |
+| `tests/` | `npm test` — headless Chrome app tests + backend tests |
+| `scripts/` | `bump-version.sh`, `ship.sh`, `make-preview.sh`, `publish-preview.sh`, `rebuild-apk.sh` |
+
+## Releasing
+
+1. `scripts/bump-version.sh 45` (updates `APP_VERSION`, `sw.js` `CACHE` and every `?v=`)
+2. `npm test` (also run by `ship.sh`, `publish-preview.sh` and `rebuild-apk.sh`; they refuse on failure)
+3. `scripts/publish-preview.sh` → check `/preview/` on the phone (see `PREVIEW.md`)
+4. `scripts/ship.sh --push` only after Stewart OKs it
 
 Rest cues: default **Chime** (app-style tones). Optional voice packs play pre-generated Australian audio — not browser `speechSynthesis`.
 
@@ -26,11 +45,11 @@ The saved JSON object includes:
 
 - `programId` / `dayIndex` — current program and day
 - `exercises` — today’s lifts, weights, set logs
-- `history` — recent session notes (kept to the last 30)
+- `history` — logged sessions, newest first (kept to the last 500)
 - `liftProgress` — long-term progression (weights, levels, streaks)
 - `soundVolume` / `cuePack` — rest-timer volume and voice cue style
 
-Nothing is synced to a server. Clearing site data, switching browsers, or uninstalling the Android app will wipe it unless you Export first.
+Other keys: `anvil_walks_v1` (walks), `anvil-sync-v1` (sync settings), `anvil_sync_token_v1` (trusted-phone token), `anvil-restore-offered-v1`, `anvil_walk_active_v1` (walk in progress), and safety copies `anvil_app_v3_snap` (before each new version first runs), `anvil_app_v3_undo` (before Import/Restore replaces data), `anvil_app_v3_rescue` (data that failed to load). The family's phones also sync to a private Google Sheet (see `backend/Code.gs`). Clearing site data, switching browsers, or uninstalling the Android app will wipe it unless you Export first.
 
 ## Export / Import backups
 
@@ -52,7 +71,7 @@ To keep existing workouts when shipping a new build:
 
 Uninstalling removes the app’s WebView storage and deletes all local data. Prefer Export → update → Import if you must wipe the install.
 
-When you change shell assets (HTML/CSS/JS), bump the service worker `CACHE` name (currently `anvil-v19`) so installed clients fetch the new files.
+When you change shell assets (HTML/CSS/JS), run `scripts/bump-version.sh` so installed clients fetch the new files.
 
 ## Running locally
 
