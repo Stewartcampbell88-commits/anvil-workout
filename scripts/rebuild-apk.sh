@@ -4,6 +4,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="$ROOT"
+WWW_DIRS=(css js sounds)   # split app parts (v44+) + cue clips
 WWW_FILES=(index.html manifest.json sw.js favicon.svg icon.svg
   icon-192.png icon-192-maskable.png icon-512.png icon-512-maskable.png)
 
@@ -48,6 +49,11 @@ command -v java >/dev/null || { echo "java required"; exit 1; }
 [[ -x "$BUILD_TOOLS/apksigner" ]] || { echo "Missing build-tools at $BUILD_TOOLS"; exit 1; }
 [[ -f "$KEYSTORE" && -f "$PASS_FILE" ]] || { echo "Missing keystore or pass file (see android/SIGNING.md)"; exit 1; }
 
+# Never build an APK from a failing tree.
+if [[ "${SKIP_TESTS:-0}" != "1" ]]; then
+  (cd "$ROOT" && npm test) || { echo "Tests failed — not building the APK"; exit 1; }
+fi
+
 if [[ ! -d "$DECODE_DIR" ]]; then
   [[ -n "$BASE_APK" && -f "$BASE_APK" ]] || { echo "No DECODE_DIR and no --base-apk"; exit 1; }
   java -jar "$APKTOOL_JAR" d -f -o "$DECODE_DIR" "$BASE_APK"
@@ -59,6 +65,10 @@ rm -rf "$WWW"/*
 for f in "${WWW_FILES[@]}"; do
   [[ -f "$SRC/$f" ]] || { echo "Missing web asset: $SRC/$f"; exit 1; }
   cp "$SRC/$f" "$WWW/"
+done
+for d in "${WWW_DIRS[@]}"; do
+  [[ -d "$SRC/$d" ]] || { echo "Missing web dir: $SRC/$d"; exit 1; }
+  cp -r "$SRC/$d" "$WWW/"
 done
 
 # Bump version in apktool.yml
