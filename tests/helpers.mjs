@@ -50,6 +50,7 @@ function makeSheet(name){
     getLastRow: () => rows.length,
     getLastColumn: () => rows.reduce((m, r) => Math.max(m, r.length), 0),
     setFrozenRows(){}, hideColumns(c){ sh.hidden.push(c); },
+    deleteRow(r){ rows.splice(r - 1, 1); },
     getRange(r, c, nr = 1, nc = 1){
       const rng = {
         getValues(){ const out = []; for (let i = 0; i < nr; i++) { const row = []; for (let j = 0; j < nc; j++) { const v = rows[r - 1 + i]?.[c - 1 + j]; row.push(v === undefined ? "" : v); } out.push(row); } return out; },

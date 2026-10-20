@@ -302,6 +302,11 @@ function isPlankSeconds(ex){
   return ex.id === "em-plank" || ex.id === "tp-plank" || /seconds/i.test(ex.note||"");
 }
 const AMRAP_BONUS = 2;
+// Retention caps (were 60 sessions / 90 weigh-ins / 500 walks, which silently deleted old training history).
+// 500 sessions ≈ 4–5 years at 2–3×/week and keeps the sync body well under the script's 2 MB limit.
+const HISTORY_MAX = 500;
+const BODYWEIGHT_MAX = 1000;
+const WALKS_MAX = 2000;
 const KG_STEP = 2.5;
 const KG_FLOOR = -50; // assisted (negative) loads; floor is practical plate steps
 function clampKg(w){
@@ -787,6 +792,27 @@ function loadWalks(){
 function saveWalks(){
   try { localStorage.setItem(WALK_STORAGE, JSON.stringify(walks)); } catch {}
 }
+// A walk in progress is kept on disk too, so closing/reloading the app (or Update now) mid-walk doesn't lose it.
+const WALK_ACTIVE_KEY = "anvil_walk_active_v1";
+function persistActiveWalk(){
+  try {
+    if (!walk.active || !walk.startedAt) { localStorage.removeItem(WALK_ACTIVE_KEY); return; }
+    localStorage.setItem(WALK_ACTIVE_KEY, JSON.stringify({ startedAt: walk.startedAt, distanceKm: walk.distanceKm, lastPos: walk.lastPos }));
+  } catch {}
+}
+function resumeActiveWalk(){
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(WALK_ACTIVE_KEY) || "null"); } catch {}
+  if (!saved || !Number.isFinite(saved.startedAt)) return false;
+  const age = Date.now() - saved.startedAt;
+  if (!(age >= 0 && age < 24 * 3600 * 1000)) { try { localStorage.removeItem(WALK_ACTIVE_KEY); } catch {} return false; }
+  startWalkSession(saved.startedAt);
+  walk.distanceKm = Number(saved.distanceKm) || 0;
+  if (saved.lastPos && Number.isFinite(saved.lastPos.lat) && Number.isFinite(saved.lastPos.lon)) walk.lastPos = saved.lastPos;
+  onWalkTick();
+  persistActiveWalk();
+  return true;
+}
 
 function fmtWalkDuration(sec){
   const s = Math.max(0, Math.floor(sec));
@@ -879,6 +905,7 @@ function onWalkPosition(pos){
     if (meters >= WALK_MIN_MOVE_M) {
       walk.distanceKm += km;
       walk.lastPos = next;
+      persistActiveWalk();
       updateWalkLiveDom();
     }
   } else {
@@ -900,16 +927,17 @@ function onWalkGeoError(err){
   if (ui.mainTab === "walk") render();
 }
 
-function startWalkSession(){
+function startWalkSession(resumeFrom){
   if (walk.active) return;
   walk.active = true;
-  walk.startedAt = Date.now();
+  walk.startedAt = Number.isFinite(resumeFrom) ? resumeFrom : Date.now();
   walk.elapsedSec = 0;
   walk.distanceKm = 0;
   walk.lastPos = null;
   walk.geoMsg = "";
   if (walk.tick) clearInterval(walk.tick);
   walk.tick = setInterval(onWalkTick, 250);
+  persistActiveWalk();
   acquireWakeLock();
   if (navigator.geolocation) {
     try {
@@ -944,10 +972,11 @@ function stopWalkSession(){
   walk.active = false;
   walk.startedAt = null;
   walk.lastPos = null;
+  persistActiveWalk();
 
   if (durationSec >= WALK_MIN_SAVE_SEC) {
     walks.unshift({ date, durationSec, distanceKm, startedAt });
-    if (walks.length > 500) walks.length = 500;
+    if (walks.length > WALKS_MAX) walks.length = WALKS_MAX;
     saveWalks();
     newLocalActivity();
     syncSoon();
@@ -1251,9 +1280,36 @@ function normalizeCuePack(id){
   const mapped = CUE_PACK_ALIASES[id] || id;
   return CUE_PACKS[mapped] ? mapped : "chime";
 }
-function load(){
+// Safety copies (extra keys only; the main keys and formats are unchanged).
+// _snap: the saved data as it was before this app version first touched it (undo for a bad migration).
+// _rescue: saved data that couldn't be read, kept instead of being overwritten.
+// _undo: what was on the phone just before an Import / Restore from cloud replaced it.
+const SNAP_KEY = STORAGE + "_snap", RESCUE_KEY = STORAGE + "_rescue", UNDO_KEY = STORAGE + "_undo";
+function stashCopy(key, extra){
   try {
-    const raw = JSON.parse(localStorage.getItem(STORAGE) || "null");
+    const st = localStorage.getItem(STORAGE);
+    if (!st) return false;
+    localStorage.setItem(key, JSON.stringify({ at: new Date().toISOString(), version: APP_VERSION, ...extra, state: st, walks: localStorage.getItem(WALK_STORAGE) }));
+    return true;
+  } catch { return false; }
+}
+function rescueSaved(reason){
+  try {
+    const st = localStorage.getItem(STORAGE);
+    if (!st) return;
+    const prev = JSON.parse(localStorage.getItem(RESCUE_KEY) || "null");
+    if (prev && prev.state === st) return;
+    stashCopy(RESCUE_KEY, { reason: String(reason && reason.message || reason || "") });
+  } catch {}
+}
+function load(){
+  const rawText = (() => { try { return localStorage.getItem(STORAGE); } catch { return null; } })();
+  try {
+    if (rawText) {
+      let snap = null; try { snap = JSON.parse(localStorage.getItem(SNAP_KEY) || "null"); } catch {}
+      if (!snap || snap.version !== APP_VERSION) stashCopy(SNAP_KEY);
+    }
+    const raw = JSON.parse(rawText || "null");
     if (!raw) return;
     const program = getProgram(raw.programId || "anvil");
     const dayIndex = Math.min(Math.max(0, raw.dayIndex||0), program.days.length-1);
@@ -1340,9 +1396,16 @@ function load(){
       loudCuesV33: true,
     };
     if (normalizeWaveTargets() || needsCueMigration || layoutChanged) save();
-  } catch {}
+  } catch (e) {
+    rescueSaved(e);
+    ui.loadFailed = true;
+  }
 }
 function save(){
+  try { saveState(); }
+  catch (e) { try { toast("Couldn’t save on this phone", "Storage is full — Export a backup now"); } catch {} }
+}
+function saveState(){
   localStorage.setItem(STORAGE, JSON.stringify({
     programId: state.programId, dayIndex: state.dayIndex,
     exercises: state.exercises, history: state.history, liftProgress: state.liftProgress,
@@ -1419,6 +1482,7 @@ async function syncNow(manual){
   if (!navigator.onLine) { syncCfg.pending = true; syncCfg.status = "Offline — will retry"; saveSync(); syncStatusRefresh(); return; }
   syncBusy = true; syncCfg.status = "Syncing…"; syncStatusRefresh();
   // text/plain = "simple" request, so no CORS preflight (Apps Script can't answer OPTIONS)
+  const sentAs = syncName();
   const body = JSON.stringify(syncPayload());
   const opts = { method:"POST", headers:{ "Content-Type":"text/plain;charset=utf-8" }, body, redirect:"follow", cache:"no-store" };
   try {
@@ -1437,6 +1501,8 @@ async function syncNow(manual){
       syncCfg.status = "";
     } else syncCfg.status = "Sent";
     syncCfg.lastSync = new Date().toISOString(); syncCfg.pending = false;
+    // Pin who this phone syncs as, so switching program later can't start overwriting another person's cloud copy.
+    if (!syncCfg.name && sentAs) syncCfg.name = sentAs;
   } catch (e) {
     syncCfg.pending = true;
     syncCfg.status = (e && e.message && !/fetch|network|load failed/i.test(e.message)) ? `${e.message} — will retry` : "Network error — will retry";
@@ -1455,7 +1521,7 @@ function syncIfStale(){
 window.addEventListener("online", () => { if (syncCfg.pending) syncNow(false); });
 
 function exportBackup(){
-  const data = JSON.stringify(backupPayload(), null, 2);
+  const data = JSON.stringify({ ...backupPayload(), walks: walks || [] }, null, 2);
   const d = new Date();
   const name = `anvil-backup-${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}.json`;
   const blob = new Blob([data], {type:"application/json"});
@@ -1496,6 +1562,7 @@ function importBackup(){
 
 // Shared by Import (file) and Restore from cloud. Walks are replaced only when the backup has them.
 function applyBackup(raw){
+      if (!localDataEmpty()) stashCopy(UNDO_KEY, { reason: "before import/restore" });
       localStorage.setItem(STORAGE, JSON.stringify({
         programId: raw.programId || "anvil",
         dayIndex: typeof raw.dayIndex === "number" ? raw.dayIndex : 0,
@@ -1508,7 +1575,7 @@ function applyBackup(raw){
         loudCuesV33: true,
       }));
       if (Array.isArray(raw.walks)) {
-        walks = raw.walks.filter(w => w && typeof w.date === "string" && typeof w.durationSec === "number").slice(0, 500);
+        walks = raw.walks.filter(w => w && typeof w.date === "string" && typeof w.durationSec === "number").slice(0, WALKS_MAX);
         saveWalks();
       }
       load();
@@ -1936,7 +2003,7 @@ function logSession(){
   state.exercises = exercises;
   state.liftProgress = captureProgress(exercises, state.liftProgress);
   const dayLabel = getProgram(programId)?.days?.[state.dayIndex]?.label || "";
-  state.history = [{date:new Date().toISOString(), programId, day: dayLabel, notes, lifts}, ...state.history].slice(0,60);
+  state.history = [{date:new Date().toISOString(), programId, day: dayLabel, notes, lifts}, ...state.history].slice(0,HISTORY_MAX);
   ui.pendingHolds = balanceHolds.length ? balanceHolds : null;
   save();
   newLocalActivity();
@@ -2107,7 +2174,7 @@ function saveBodyWeight(){
   if (ui.bwLinkSession && state.history[0]) {
     state.history[0] = {...state.history[0], bodyWeightKg: kg};
   }
-  state.bodyWeightLog = [{ date, kg }, ...(state.bodyWeightLog || [])].slice(0, 90);
+  state.bodyWeightLog = [{ date, kg }, ...(state.bodyWeightLog || [])].slice(0, BODYWEIGHT_MAX);
   newLocalActivity();
   save();
   toast("Body weight saved", `${kg} kg`);
@@ -2534,7 +2601,7 @@ function render(){
   } else if (settingsTab === "history") {
     settingsDetail = `<section class="panel"><p class="tiny">Session log</p>${
       state.history.length===0 ? `<p class="note">No sessions yet. Tick every set, then log.</p>`
-      : `<ol style="margin:.5rem 0 0;padding:0;list-style:none">${state.history.slice(0,8).map(h=>`<li style="margin-top:.75rem"><p style="margin:0;font-size:.875rem;font-weight:600">${esc(fmtWhen(h.date))}</p><p class="note">${esc(h.notes.join(" · "))}</p></li>`).join("")}</ol>`
+      : `<ol style="margin:.5rem 0 0;padding:0;list-style:none">${state.history.slice(0,8).map(h=>`<li style="margin-top:.75rem"><p style="margin:0;font-size:.875rem;font-weight:600">${esc(fmtWhen(h.date))}</p><p class="note">${esc((Array.isArray(h.notes) ? h.notes : []).join(" · "))}</p></li>`).join("")}</ol>`
     }</section>`;
   } else if (settingsTab === "progress") {
     if (!PROGRESS_RANGES[ui.progressRange]) ui.progressRange = "1m";
@@ -3490,14 +3557,20 @@ document.getElementById("app").addEventListener("click", (e) => {
 try {
   load();
   loadWalks();
+  resumeActiveWalk();
   if (normalizeWaveTargets()) save();
   render();
-} catch {
-  try { localStorage.removeItem(STORAGE); } catch {}
-  state = { programId:"anvil", dayIndex:0, exercises: seedProgram("anvil", 0), history:[], liftProgress:{}, bodyWeightLog:[], soundVolume:1.0, cuePack:"chime", loudCuesV33:true };
+} catch (e) {
+  // Never delete saved data here (v43 and earlier removed anvil_app_v3 on any startup error).
+  rescueSaved(e);
   try { loadWalks(); } catch {}
-  try { render(); } catch {}
+  try { render(); }
+  catch {
+    const app = document.getElementById("app");
+    if (app) app.textContent = "ANVIL hit a problem drawing this screen. Your data is safe on this phone — close and reopen the app, or tap Update now when it appears.";
+  }
 }
+if (ui.loadFailed) { try { toast("Couldn’t read saved data", "A safe copy was kept on this phone"); } catch {} }
 try { loadSync(); setTimeout(syncIfStale, 2500); } catch {}
 if (location.protocol.startsWith("http") && "serviceWorker" in navigator) {
   function watchInstalling(worker){

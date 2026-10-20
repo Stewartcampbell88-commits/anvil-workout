@@ -71,11 +71,19 @@ test("a smaller log never silently destroys the previous cloud copy (kept in Raw
   const arch = g.sheetRows("RawArchive");
   assert.ok(arch.length >= 2, "archive row written");
   const row = arch[arch.length - 1];
-  const body = row.slice(5).join("");
+  const body = row.slice(6).join("");
   assert.equal(JSON.parse(body).data.history.length, 10);
   // A normal growing sync doesn't archive.
   const g2 = makeGas(); g2.post(payload("Stewart", 10)); g2.post(payload("Stewart", 11));
   assert.equal(g2.sheetRows("RawArchive").length, 0);
+  // Restore still returns the latest copy; the archive is for manual recovery.
+  assert.equal(g.get({ action: "restore", name: "Stewart", pin: TEST_PIN }).data.history.length, 1);
+});
+
+test("RawArchive is bounded", () => {
+  const g = makeGas();
+  for (let i = 0; i < 70; i++) { g.post(payload("Stewart", 3)); g.post(payload("Stewart", 2)); }
+  assert.equal(g.sheetRows("RawArchive").length - 1, 60);
 });
 
 test("a log from a different program under the same name is archived first", () => {

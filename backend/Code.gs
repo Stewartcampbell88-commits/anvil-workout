@@ -6,6 +6,10 @@
  *   Sessions   one row per lift per session (deduped)
  *   Bodyweight one row per weigh-in (deduped, latest kg wins)
  *   Walks      one row per walk (deduped)
+ *   RawArchive the previous Raw copy, kept whenever a sync would shrink the log (fewer sessions,
+ *              walks or weigh-ins) or switch program under the same name — so a new phone that
+ *              skipped Restore, or a phone synced under the wrong name, can't silently destroy
+ *              the only full cloud copy. Newest ARCHIVE_MAX rows kept.
  *
  * GET  ?action=restore&name=Stewart|Alexis|Marcus&pin=NNNN   → {ok, name, syncedAt, appVersion, data, deviceToken} (Restore from cloud)
  * GET  ?action=restore&name=...&token=<device token>          → same, no PIN needed (trusted phone; no new token)
@@ -48,9 +52,11 @@ const PIN_WINDOW_S = 600;            // ... within 10 minutes → locked
 const TOKEN_PROP_PREFIX = "DEVICE_TOKENS_"; // + STEWART / ALEXIS / MARCUS
 const ENROL_PROP = "ENROL_UNTIL";
 const TOKENS_MAX = 10;               // per name; oldest dropped
+const ARCHIVE_MAX = 60;              // RawArchive rows kept (all names), oldest dropped
 
 const TABS = {
   Raw:        ["person", "updatedAt", "appVersion", "chars", "parts", "json_1"],
+  RawArchive: ["person", "archivedAt", "updatedAt", "appVersion", "chars", "parts", "json_1"],
   Sessions:   ["key", "date", "person", "program", "day", "exercise", "weight_kg", "target_reps", "reps_per_set", "result"],
   Bodyweight: ["key", "date", "person", "kg"],
   Walks:      ["key", "date", "person", "minutes", "km"],
@@ -239,7 +245,7 @@ function tab_(ss, name) {
     sh = ss.insertSheet(name);
     sh.getRange(1, 1, 1, TABS[name].length).setValues([TABS[name]]).setFontWeight("bold");
     sh.setFrozenRows(1);
-    if (name !== "Raw") sh.hideColumns(1); // dedupe key column
+    if (name !== "Raw" && name !== "RawArchive") sh.hideColumns(1); // dedupe key column
     const blank = ss.getSheetByName("Sheet1");
     if (blank && blank.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(blank);
   }
@@ -281,11 +287,46 @@ function writeRaw_(ss, person, p, body) {
     const names = sh.getRange(2, 1, n, 1).getValues();
     for (let i = 0; i < names.length; i++) if (names[i][0] === person) { at = i + 2; break; }
   }
+  if (at) archiveIfShrinking_(ss, sh, at, p);
   if (!at) at = sh.getLastRow() + 1;
   const rng = sh.getRange(at, 1, 1, row.length);
   rng.setNumberFormat("@"); // plain text: no date/number/formula conversion of JSON chunks
   rng.setValues([row]);
   return parts.length;
+}
+
+/** Count the list sizes in a log's data (missing → 0). */
+function logSizes_(data) {
+  const d = (data && typeof data === "object") ? data : {};
+  const n = function (k) { return Array.isArray(d[k]) ? d[k].length : 0; };
+  return { history: n("history"), walks: n("walks"), bodyWeightLog: n("bodyWeightLog"), programId: String(d.programId || "") };
+}
+
+/** Before Raw row `at` is overwritten: copy it to RawArchive if the incoming log is smaller or another program. */
+function archiveIfShrinking_(ss, sh, at, incoming) {
+  const head = sh.getRange(at, 1, 1, 5).getValues()[0];
+  const parts = Math.max(1, Number(head[4]) || 1);
+  const cells = sh.getRange(at, 6, 1, parts).getValues()[0].map(function (c) { return c == null ? "" : String(c); });
+  const body = cells.join("");
+  if (!body) return false;
+  let old = null;
+  try { old = JSON.parse(body); } catch (e) { old = null; }
+  const a = logSizes_(old && old.data), b = logSizes_(incoming && incoming.data);
+  const shrinks = !old || b.history < a.history || b.walks < a.walks || b.bodyWeightLog < a.bodyWeightLog ||
+                  (a.programId && b.programId && a.programId !== b.programId);
+  if (!shrinks) return false;
+  const arch = tab_(ss, "RawArchive");
+  const row = [head[0], new Date().toISOString(), String(head[1] || ""), String(head[2] || ""), body.length, cells.length].concat(cells);
+  if (arch.getLastColumn() < row.length) {
+    const hdr = [];
+    for (let c = 7; c <= row.length; c++) hdr.push("json_" + (c - 6));
+    arch.getRange(1, 7, 1, hdr.length).setValues([hdr]).setFontWeight("bold");
+  }
+  const rng = arch.getRange(arch.getLastRow() + 1, 1, 1, row.length);
+  rng.setNumberFormat("@");
+  rng.setValues([row]);
+  while (arch.getLastRow() - 1 > ARCHIVE_MAX) arch.deleteRow(2);
+  return true;
 }
 
 /** Split the JSON into <= CHUNK pieces; never start a piece with a char Sheets might reinterpret. */
