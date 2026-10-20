@@ -76,6 +76,34 @@ test("balance chain: row → bench, and EMBER press → row", async () => {
   assert.equal(o.ex.weight, 5); assert.equal(o.holds[0].ceilingId, "em-row");
 });
 
+test("balance chain: a 0 kg (bodyweight) squat doesn't cap EMBER bench", async () => {
+  const o = await sess({ pid: "ember", id: "em-bench", patch: { reps: 12, weight: 20, streak: 2 }, progress: { "em-squat": { reps: 8, weight: 0 } } });
+  assert.deepEqual(W(o), { reps: 6, weight: 22.5, streak: 0 });
+  assert.equal(o.holds, null);
+});
+
+test("balance chain: TITAN plate bench progresses past a 0 kg squat and can reach the bar", async () => {
+  let o = await sess({ pid: "titan", id: "tp-bench", patch: { reps: 12, weight: 2.5, streak: 2, levelIndex: 0 }, progress: { "tp-squat": { reps: 8, weight: 0 } } });
+  assert.deepEqual(W(o), { reps: 6, weight: 5, streak: 0 });
+  assert.equal(o.holds, null);
+  o = await sess({ pid: "titan", id: "tp-bench", patch: { reps: 8, weight: 7.5, streak: 0, levelIndex: 0 }, reps: [8, 8, 10], progress: { "tp-squat": { reps: 8, weight: 0 } } });
+  assert.equal(o.ex.weight, 10, "AMRAP bump not held by the bodyweight squat");
+});
+
+test("balance chain: unset / negative squat doesn't cap bench either; a loaded squat still does", async () => {
+  let o = await sess({ pid: "ember", id: "em-bench", patch: { reps: 12, weight: 20, streak: 2 }, progress: { "em-squat": { reps: 8, weight: -5 } } });
+  assert.equal(o.ex.weight, 22.5);
+  o = await sess({ pid: "ember", id: "em-bench", patch: { reps: 12, weight: 20, streak: 2 }, progress: { "em-squat": { reps: 8, weight: 10 } } });
+  assert.equal(o.ex.weight, 20); assert.equal(o.holds[0].ceilingId, "em-squat");
+});
+
+test("balance chain: rest of the chain unchanged — TITAN row capped by bench, EMBER row by bench", async () => {
+  let o = await sess({ pid: "titan", id: "tp-row", patch: { reps: 12, weight: 2.5, streak: 2 }, progress: { "tp-bench": { reps: 8, weight: 2.5, levelIndex: 0 }, "tp-squat": { reps: 8, weight: 0 } } });
+  assert.equal(o.ex.weight, 2.5); assert.equal(o.holds[0].ceilingId, "tp-bench");
+  o = await sess({ pid: "ember", id: "em-row", patch: { reps: 12, weight: 20, streak: 2 }, progress: { "em-bench": { reps: 8, weight: 20 }, "em-squat": { reps: 8, weight: 0 } } });
+  assert.equal(o.ex.weight, 20); assert.equal(o.holds[0].ceilingId, "em-bench");
+});
+
 test("3 failed sessions → reset week drops 2.5 kg", async () => {
   let o = await sess({ id: "squat", patch: { reps: 8, weight: 60, failStreak: 0 }, reps: [8, 8, 6] });
   assert.equal(o.ex.failStreak, 1); assert.equal(o.ex.weight, 60);

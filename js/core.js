@@ -6,7 +6,7 @@ const ANVIL_PREVIEW = /\/preview\//.test(location.pathname);
 const PREVIEW_PREFIX = "anvil-preview:";
 function K(key){ return ANVIL_PREVIEW ? PREVIEW_PREFIX + key : key; }
 const STORAGE = K("anvil_app_v3");
-const APP_VERSION = "anvil-v44";
+const APP_VERSION = "anvil-v45";
 const CUE_LOUDNESS = 2.4;
 const CUE_MAX_GAIN = 0.95;
 const SET_OPTS = [1,2,3,4,5];
@@ -114,6 +114,7 @@ const BALANCE_CHAINS = {
   ember: { "em-press": "em-row", "em-row": "em-bench", "em-bench": "em-squat", "em-squat": "em-rdl" },
   titan: { "tp-press": "tp-row", "tp-row": "tp-bench", "tp-bench": "tp-squat", "tp-squat": "tp-rdl" },
 };
+const SQUAT_IDS = new Set(["squat", "em-squat", "tp-squat"]);
 function ceilingFor(programId, exerciseId, sessionExs, progress){
   const explicit = BALANCE_CHAINS[programId];
   if (explicit) return explicit[exerciseId] || null;
@@ -156,6 +157,9 @@ function balanceKgHold(programId, ex, nextWeight, sessionExs, progress){
   if (!ceilId) return null;
   const ceilW = workingWeightFor(ceilId, sessionExs, progress);
   if (ceilW == null || !Number.isFinite(ceilW)) return null;
+  // A bodyweight (0 kg), assisted or unset squat is no ceiling — otherwise EMBER/TITAN bench (and the
+  // row/press chained under it) could never gain kg. A loaded squat still caps bench as before.
+  if (SQUAT_IDS.has(ceilId) && !(ceilW > 0)) return null;
   const nw = +Number(nextWeight).toFixed(1);
   if (!(nw > ceilW)) return null;
   return {

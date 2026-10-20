@@ -402,23 +402,36 @@ function cueGo(){
   if (navigator.vibrate) navigator.vibrate([180,70,180,70,280]);
   render();
 }
+// Rest runs off an end timestamp, so time with the screen locked / app in the background still counts
+// (phones freeze or throttle intervals). On return: overdue → GO once; mid-countdown → only that second's cue.
+let restEndAt = 0;
+function restLeft(){ return Math.max(0, Math.ceil((restEndAt - Date.now()) / 1000)); }
+function restTick(){
+  if (!ui.running || !restEndAt) return;
+  const r = restLeft();
+  if (r <= 0) { clearTick(); restEndAt = 0; cueGo(); return; }
+  if ((r===3||r===2||r===1) && lastCue !== r) { lastCue = r; cueCountdown(r); if (navigator.vibrate) navigator.vibrate(80); }
+  if (r !== remainVal) { remainVal = r; ui.remain = r; renderTimerOnly(); }
+}
 function startRest(sec){
-  clearTick(); lastCue = -1; ui.isGo = false; remainVal = sec; ui.remain = sec; ui.running = true; render();
-  tick = setInterval(() => {
-    remainVal -= 1;
-    const r = remainVal;
-    if ((r===3||r===2||r===1) && lastCue !== r) { lastCue = r; cueCountdown(r); if (navigator.vibrate) navigator.vibrate(80); }
-    if (r <= 0) { clearTick(); cueGo(); return; }
-    ui.remain = r; renderTimerOnly();
-  }, 1000);
+  clearTick(); lastCue = -1; ui.isGo = false; remainVal = sec; ui.remain = sec; ui.running = true;
+  restEndAt = Date.now() + sec * 1000;
+  render();
+  tick = setInterval(restTick, 250);
 }
-function stopRest(){ clearTick(); ui.running=false; ui.remain=0; remainVal=0; ui.isGo=false; }
+function stopRest(){ clearTick(); restEndAt = 0; ui.running=false; ui.remain=0; remainVal=0; ui.isGo=false; }
 function adjustRest(d){
+  if (ui.running && tick && restEndAt) {
+    const next = Math.max(5, restLeft() + d);
+    restEndAt = Date.now() + next * 1000;
+    if (next > 3) lastCue = -1;
+    remainVal = next; ui.remain = next; render(); return;
+  }
   const base = remainVal > 0 ? remainVal : (ui.remain || 90);
-  const next = Math.max(5, base + d);
-  if (ui.running && tick) { remainVal = next; ui.remain = next; render(); return; }
-  startRest(next);
+  startRest(Math.max(5, base + d));
 }
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") restTick(); });
+window.addEventListener("focus", () => restTick());
 
 function bumpSetReps(ei, si, delta){
   const ex0 = state.exercises[ei];
