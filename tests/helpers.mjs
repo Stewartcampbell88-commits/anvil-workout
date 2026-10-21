@@ -46,10 +46,21 @@ export async function closeBrowser(){ if (browserP) { const b = await browserP; 
 export function codeGsPath(){
   return process.env.ANVIL_CODE_GS || path.join(ROOT, "backend", "Code.gs");
 }
+// Like real Sheets: a string typed into a cell that is NOT plain text ('@') can be auto-converted.
+// We model the bug that bit us: "8, 8, 8" (reps per set) became a Date (2008-08-08).
+const SHEETS_DATEISH = /^\s*(\d{1,4})\s*,\s*(\d{1,2})\s*,\s*(\d{1,2})\s*$/;
+function sheetsCoerce(v, fmt){
+  if (typeof v !== "string" || fmt === "@") return v;
+  const m = SHEETS_DATEISH.exec(v);
+  if (!m) return v;
+  const y = Number(m[1]); return new Date(Date.UTC(y < 100 ? 2000 + y : y, Number(m[2]) - 1, Number(m[3])));
+}
 function makeSheet(name){
   const rows = []; // rows[r][c], 0-based
+  const formats = new Map(); // "r,c" (1-based) → number format
+  const fmtAt = (r, c) => formats.get(r + "," + c);
   const sh = {
-    name, rows, hidden: [],
+    name, rows, hidden: [], formats, fmtAt,
     getName: () => name,
     getLastRow: () => rows.length,
     getLastColumn: () => rows.reduce((m, r) => Math.max(m, r.length), 0),
@@ -58,9 +69,12 @@ function makeSheet(name){
     getRange(r, c, nr = 1, nc = 1){
       const rng = {
         getValues(){ const out = []; for (let i = 0; i < nr; i++) { const row = []; for (let j = 0; j < nc; j++) { const v = rows[r - 1 + i]?.[c - 1 + j]; row.push(v === undefined ? "" : v); } out.push(row); } return out; },
-        setValues(vals){ for (let i = 0; i < nr; i++) { rows[r - 1 + i] ||= []; for (let j = 0; j < nc; j++) rows[r - 1 + i][c - 1 + j] = vals[i][j]; } return rng; },
-        setValue(v){ rows[r - 1] ||= []; rows[r - 1][c - 1] = v; return rng; },
-        setFontWeight(){ return rng; }, setNumberFormat(){ return rng; },
+        setValues(vals){
+          if (vals.length !== nr || vals.some((row) => row.length !== nc)) throw new Error("setValues: data does not match range " + nr + "x" + nc);
+          for (let i = 0; i < nr; i++) { rows[r - 1 + i] ||= []; for (let j = 0; j < nc; j++) rows[r - 1 + i][c - 1 + j] = sheetsCoerce(vals[i][j], fmtAt(r + i, c + j)); } return rng; },
+        setValue(v){ rows[r - 1] ||= []; rows[r - 1][c - 1] = sheetsCoerce(v, fmtAt(r, c)); return rng; },
+        setFontWeight(){ return rng; },
+        setNumberFormat(f){ for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) formats.set((r + i) + "," + (c + j), f); return rng; },
       };
       return rng;
     },

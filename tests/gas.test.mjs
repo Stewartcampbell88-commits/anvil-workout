@@ -118,3 +118,80 @@ test("Sessions tab: duration_min appended at the end; old 10-column tabs/rows/cl
   h3[0].durationSec = 1800; g2.post({ name: "Marcus", data: { programId: "titan", history: h3 } });
   for (const x of g2.sheetRows("Sessions").filter((x) => x[2] === "Marcus")) assert.equal(x[10], 30);
 });
+
+/* ---------- reps_per_set must stay text (Sheets turned "8, 8, 8" into 2008-08-08) ---------- */
+
+const REPS_COL = 8; // 0-based index of reps_per_set in Sessions
+const expectedReps = (hist, person) => {
+  const m = {};
+  for (const s of hist) s.lifts.forEach((l, i) => { m[[person, s.date, l.id || l.name || i].join("|")] = l.sets.map((x) => x.reps).join(", "); });
+  return m;
+};
+
+test("Sessions: new reps_per_set cells are written as plain text, never auto-converted to dates", () => {
+  const g = makeGas();
+  const p = payload("Stewart", 4);
+  g.post(p);
+  const sh = g.sheets.get("Sessions");
+  const want = expectedReps(p.data.history, "Stewart");
+  const rows = g.sheetRows("Sessions").slice(1);
+  assert.ok(rows.length > 0);
+  rows.forEach((x, i) => {
+    assert.equal(typeof x[REPS_COL], "string", "row " + (i + 2) + " is text, not " + x[REPS_COL]);
+    assert.equal(x[REPS_COL], want[x[0]]);
+    assert.equal(sh.fmtAt(i + 2, REPS_COL + 1), "@", "reps_per_set cell formatted as plain text");
+    assert.equal(sh.fmtAt(i + 2, 1), "@", "key cell formatted as plain text");
+  });
+  // Bodyweight/Walks dedupe keys are plain text too.
+  for (const t of ["Bodyweight", "Walks"]) {
+    const s = g.sheets.get(t);
+    for (let r = 2; r <= s.getLastRow(); r++) { assert.equal(s.fmtAt(r, 1), "@"); assert.equal(typeof s.rows[r - 1][0], "string"); }
+  }
+});
+
+test("Sessions: reps_per_set cells already turned into dates are repaired from Raw on the next sync (idempotent, no rows lost)", () => {
+  const g = makeGas();
+  const ps = payload("Stewart", 4), pa = payload("Alexis", 3, { programId: "ember" });
+  g.post(ps); g.post(pa);
+  const rows = g.sheetRows("Sessions");
+  const before = rows.length;
+  // Simulate the cells the old script left behind: Dates, a bare number, and a formula-ish junk value.
+  rows[1][REPS_COL] = new Date(Date.UTC(2008, 7, 8));
+  rows[2][REPS_COL] = new Date(Date.UTC(2012, 9, 10));
+  rows[3][REPS_COL] = 888;
+  const alexisRow = rows.findIndex((x) => x[2] === "Alexis");
+  rows[alexisRow][REPS_COL] = new Date(Date.UTC(2010, 9, 10));
+  const keyOther = rows[5][0];
+  // Next sync from ONE person repairs everyone's rows (source of truth = each person's Raw JSON).
+  const r = g.post(ps);
+  assert.equal(r.ok, true);
+  assert.equal(r.added.sessions, 0);
+  assert.equal(r.added.repaired, 4);
+  const want = { ...expectedReps(ps.data.history, "Stewart"), ...expectedReps(pa.data.history, "Alexis") };
+  const after = g.sheetRows("Sessions");
+  assert.equal(after.length, before, "no rows added or deleted");
+  assert.equal(after[5][0], keyOther, "row order unchanged");
+  const sh = g.sheets.get("Sessions");
+  after.slice(1).forEach((x, i) => {
+    assert.equal(x[REPS_COL], want[x[0]], "row " + (i + 2));
+    assert.equal(sh.fmtAt(i + 2, REPS_COL + 1), "@");
+  });
+  // Idempotent: nothing left to fix.
+  assert.equal(g.post(ps).added.repaired, 0);
+  assert.deepEqual(g.sheetRows("Sessions"), after);
+});
+
+test("repairRepsColumn() can be run by hand from the editor; rows with no Raw source are left alone", () => {
+  const g = makeGas();
+  g.post(payload("Marcus", 2, { programId: "titan" }));
+  const sh = g.sheets.get("Sessions");
+  sh.rows.push(["Ghost|2026-01-01|squat", "2026-01-01", "Ghost", "ANVIL", "A", "Squat", 60, 8, new Date(Date.UTC(2008, 7, 8)), "ok", ""]);
+  g.sheetRows("Sessions")[1][REPS_COL] = new Date(Date.UTC(2008, 7, 8));
+  assert.equal(typeof g.ctx.repairRepsColumn, "function");
+  const n = g.ctx.repairRepsColumn();
+  assert.equal(n, 1);
+  const rows = g.sheetRows("Sessions");
+  assert.equal(typeof rows[1][REPS_COL], "string");
+  assert.ok(rows[rows.length - 1][REPS_COL] instanceof Date, "unknown key untouched (no source of truth)");
+  assert.equal(g.ctx.repairRepsColumn(), 0);
+});

@@ -4,7 +4,10 @@
  * Receives each phone's full ANVIL/EMBER/TITAN log (POST, text/plain JSON) and writes:
  *   Raw        one row per person, latest full JSON (split across cells if > 45k chars)
  *   Sessions   one row per lift per session (deduped); duration_min (last column, v47+) is that
- *              whole workout's length, repeated on each lift row; blank for older sessions/clients
+ *              whole workout's length, repeated on each lift row; blank for older sessions/clients.
+ *              key + reps_per_set are written as plain text ('@'): Sheets used to turn "8, 8, 8"
+ *              into the date 2008-08-08. Every sync also repairs any reps_per_set cell that doesn't
+ *              match the Raw JSON (source of truth) — see repairRepsColumn_ (▶ repairRepsColumn by hand).
  *   Bodyweight one row per weigh-in (deduped, latest kg wins)
  *   Walks      one row per walk (deduped)
  *   RawArchive the previous Raw copy, kept whenever a sync would shrink the log (fewer sessions,
@@ -104,6 +107,9 @@ function doPost(e) {
       bodyweight: writeBodyweight_(ss, person, data),
       walks: writeWalks_(ss, person, data),
     };
+    // Self-repair (all names, from Raw): fixes reps_per_set cells an older script let Sheets turn into dates.
+    // Never fails the sync: -1 means the repair itself hit an error (the sync above still went through).
+    try { res.repaired = repairRepsColumn_(ss); } catch (err) { res.repaired = -1; }
     const reply = { ok: true, person: person, added: res };
     // One-time enrolment of the family's existing phones (see header).
     if (p.wantToken === true && enrolOpen_() && hasRealData_(data) && !tokenValid_(person, p.deviceToken)) {
@@ -262,9 +268,15 @@ function keyIndex_(sh) {
   return map;
 }
 
-function append_(sh, rows) {
+/**
+ * Append rows. textCols (1-based) are formatted as plain text ('@') BEFORE the write, so Sheets keeps
+ * the exact string (no "8, 8, 8" → 2008-08-08, no "=..." formulas, no number/date guessing).
+ */
+function append_(sh, rows, textCols) {
   if (!rows.length) return 0;
-  sh.getRange(sh.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+  const at = sh.getLastRow() + 1;
+  (textCols || [1]).forEach(function (c) { sh.getRange(at, c, rows.length, 1).setNumberFormat("@"); });
+  sh.getRange(at, 1, rows.length, rows[0].length).setValues(rows);
   return rows.length;
 }
 
@@ -368,6 +380,64 @@ function readRaw_(ss, person) {
   };
 }
 
+const SESSIONS_TEXT_COLS = [1, 9]; // key, reps_per_set
+const REPS_COL = 9;                 // reps_per_set (1-based)
+
+/** Dedupe key of one lift row in Sessions (must never change: existing rows are matched by it). */
+function sessionKey_(person, s, l, idx) { return [person, s.date, l.id || l.name || idx].join("|"); }
+
+/** reps_per_set text for one lift, e.g. "8, 8, 9" (or "last set 9" for old logs without per-set reps). */
+function repsText_(l) {
+  const sets = Array.isArray(l.sets) ? l.sets : null;
+  return String(sets ? sets.map(function (x) { return (x && x.reps != null) ? x.reps : ""; }).join(", ")
+                     : (l.amrapReps != null ? "last set " + l.amrapReps : ""));
+}
+
+/**
+ * Rewrites every Sessions reps_per_set cell that isn't exactly the text the Raw JSON says it should be
+ * (e.g. a Date left by Sheets' auto-conversion, or a bare number). Source of truth: each person's
+ * latest Raw row. Rows whose key isn't found in Raw (or a person with no Raw row) are left alone.
+ * Only that one cell is touched: no rows are added, deleted or reordered. Idempotent: returns the
+ * number of cells fixed, 0 once everything matches. Caller holds the script lock.
+ */
+function repairRepsColumn_(ss) {
+  const sh = ss.getSheetByName("Sessions");
+  if (!sh || sh.getLastRow() < 2) return 0;
+  const want = {};
+  Object.keys(ALLOWED).forEach(function (k) {
+    const person = ALLOWED[k];
+    const raw = readRaw_(ss, person);
+    if (!raw.ok) return;
+    const hist = Array.isArray(raw.data.history) ? raw.data.history : [];
+    hist.forEach(function (s) {
+      if (!s || !s.date || !Array.isArray(s.lifts)) return;
+      s.lifts.forEach(function (l, idx) { if (l) want[sessionKey_(person, s, l, idx)] = repsText_(l); });
+    });
+  });
+  const n = sh.getLastRow() - 1;
+  const keys = sh.getRange(2, 1, n, 1).getValues();
+  const cells = sh.getRange(2, REPS_COL, n, 1).getValues();
+  let fixed = 0;
+  for (let i = 0; i < n; i++) {
+    const key = String(keys[i][0]);
+    if (!Object.prototype.hasOwnProperty.call(want, key)) continue;
+    const cur = cells[i][0];
+    if (typeof cur === "string" && cur === want[key]) continue;
+    const cell = sh.getRange(i + 2, REPS_COL);
+    cell.setNumberFormat("@");
+    cell.setValue(want[key]);
+    fixed++;
+  }
+  return fixed;
+}
+
+/** Run from the editor (▶ repairRepsColumn) to fix reps_per_set dates now instead of waiting for a sync. */
+function repairRepsColumn() {
+  const n = withLock_(function () { return repairRepsColumn_(book_()); });
+  Logger.log("reps_per_set cells repaired: " + n);
+  return n;
+}
+
 /** Workout length in minutes (1 decimal) from a session's durationSec; "" when missing (older app versions). */
 function durMin_(s) { const v = Number(s && s.durationSec); return (isFinite(v) && v > 0) ? Math.round(v / 6) / 10 : ""; }
 
@@ -389,7 +459,7 @@ function writeSessions_(ss, person, data) {
     const dur = durMin_(s);
     s.lifts.forEach(function (l, idx) {
       if (!l) return;
-      const key = [person, s.date, l.id || l.name || idx].join("|");
+      const key = sessionKey_(person, s, l, idx);
       if (have[key] > 0) { // already written: only fill a blank duration (e.g. row written before this column existed)
         const cell = durCells[have[key] - 2];
         if (dur !== "" && cell && (cell[0] === "" || cell[0] == null)) { sh.getRange(have[key], DUR_COL).setValue(dur); cell[0] = dur; }
@@ -398,8 +468,7 @@ function writeSessions_(ss, person, data) {
       if (have[key]) return;
       have[key] = -1;
       const sets = Array.isArray(l.sets) ? l.sets : null;
-      const repsPerSet = sets ? sets.map(function (x) { return (x && x.reps != null) ? x.reps : ""; }).join(", ")
-                              : (l.amrapReps != null ? "last set " + l.amrapReps : "");
+      const repsPerSet = repsText_(l);
       let result = l.clean ? "ok" : "miss";
       if (sets && sets.some(function (x) { return !x || (!x.ok && !x.miss); })) result = "incomplete";
       rows.push([key, s.date, person, program, s.day || "", l.name || l.id || "",
@@ -407,7 +476,7 @@ function writeSessions_(ss, person, data) {
     });
   });
   rows.sort(function (a, b) { return a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0; });
-  return append_(sh, rows);
+  return append_(sh, rows, SESSIONS_TEXT_COLS);
 }
 
 function writeBodyweight_(ss, person, data) {
