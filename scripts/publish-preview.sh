@@ -13,9 +13,12 @@ SRC_REV="$(git rev-parse --short HEAD)"
 WT="$(mktemp -d)/anvil-preview"
 trap 'rm -rf "$(dirname "$WT")"' EXIT
 git clone -q --depth 1 "$PREVIEW_REPO" "$WT" 2>/dev/null || { mkdir -p "$WT"; git -C "$WT" init -q -b main; git -C "$WT" remote add origin "$PREVIEW_REPO"; }
+git -C "$WT" config user.name "$(git config user.name || echo ANVIL)"; git -C "$WT" config user.email "$(git config user.email || echo anvil@users.noreply.github.com)"
 (cd "$WT" && git rm -rqf --ignore-unmatch . >/dev/null)
 "$ROOT/scripts/make-preview.sh" "$WT/site"
 cp -r "$WT/site/." "$WT/"; rm -rf "$WT/site"; touch "$WT/.nojekyll"
 printf '# ANVIL preview\n\nTest build of [ANVIL](https://github.com/Stewartcampbell88-commits/anvil-workout) from %s. Own data (anvil-preview: keys), no sync. Published by scripts/publish-preview.sh — do not edit here.\n' "$SRC_REV" > "$WT/README.md"
-(cd "$WT" && git add -A && { git diff --cached --quiet && echo "preview already up to date"; } || git commit -qm "Preview build from anvil-workout $SRC_REV"; git log --oneline -1)
+git -C "$WT" add -A
+if git -C "$WT" diff --cached --quiet; then echo "preview already up to date"; else git -C "$WT" commit -qm "Preview build from anvil-workout $SRC_REV"; fi
+git -C "$WT" log --oneline -1
 if [[ "${1:-}" == "--push" ]]; then (cd "$WT" && git push -q origin HEAD:main) && echo "preview published: $PREVIEW_URL"; else echo "(local only — add --push to publish)"; fi
