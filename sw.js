@@ -1,22 +1,22 @@
-const CACHE = "anvil-v45";
-// The /preview/ copy runs on the same origin as live, and Cache Storage is per origin: give it its own
+const CACHE = "anvil-v46";
+// The preview copy (/anvil-preview/, formerly /preview/) runs on the same origin as live, and Cache Storage is per origin: give it its own
 // cache names and make each flavour delete only its own old caches.
-const PREVIEW = self.location.pathname.includes("/preview/");
+const PREVIEW = /\/(anvil-)?preview\//.test(self.location.pathname);
 const CACHE_NAME = PREVIEW ? "anvil-preview-" + CACHE : CACHE;
 const mine = (k) => PREVIEW ? k.startsWith("anvil-preview-") : !k.startsWith("anvil-preview-");
 const SHELL = [
   "./",
   "./index.html",
-  "./css/app.css?v=anvil-v45",
-  "./js/core.js?v=anvil-v45",
-  "./js/walk.js?v=anvil-v45",
-  "./js/audio.js?v=anvil-v45",
-  "./js/state.js?v=anvil-v45",
-  "./js/session.js?v=anvil-v45",
-  "./js/progress.js?v=anvil-v45",
-  "./js/render.js?v=anvil-v45",
-  "./js/howto.js?v=anvil-v45",
-  "./js/main.js?v=anvil-v45",
+  "./css/app.css?v=anvil-v46",
+  "./js/core.js?v=anvil-v46",
+  "./js/walk.js?v=anvil-v46",
+  "./js/audio.js?v=anvil-v46",
+  "./js/state.js?v=anvil-v46",
+  "./js/session.js?v=anvil-v46",
+  "./js/progress.js?v=anvil-v46",
+  "./js/render.js?v=anvil-v46",
+  "./js/howto.js?v=anvil-v46",
+  "./js/main.js?v=anvil-v46",
   "./manifest.json",
   "./icon-192.png",
   "./icon-512.png",

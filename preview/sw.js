@@ -1,55 +1,16 @@
-const CACHE = "anvil-v45";
-// The /preview/ copy runs on the same origin as live, and Cache Storage is per origin: give it its own
-// cache names and make each flavour delete only its own old caches.
-const PREVIEW = self.location.pathname.includes("/preview/");
-const CACHE_NAME = PREVIEW ? "anvil-preview-" + CACHE : CACHE;
-const mine = (k) => PREVIEW ? k.startsWith("anvil-preview-") : !k.startsWith("anvil-preview-");
-const SHELL = [
-  "./",
-  "./index.html",
-  "./css/app.css?v=anvil-v45",
-  "./js/core.js?v=anvil-v45",
-  "./js/walk.js?v=anvil-v45",
-  "./js/audio.js?v=anvil-v45",
-  "./js/state.js?v=anvil-v45",
-  "./js/session.js?v=anvil-v45",
-  "./js/progress.js?v=anvil-v45",
-  "./js/render.js?v=anvil-v45",
-  "./js/howto.js?v=anvil-v45",
-  "./js/main.js?v=anvil-v45",
-  "./manifest.json",
-  "./icon-192.png",
-  "./icon-512.png",
-  "./icon.svg",
-  "./sounds/three.mp3",
-  "./sounds/two.mp3",
-  "./sounds/one.mp3",
-  "./sounds/go-coach.mp3",
-  "./sounds/go-aussie.mp3",
-  "./sounds/go-rude.mp3",
-  "./sounds/go-adult.mp3",
-];
-self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((c) => c.addAll(SHELL).catch(() => c.addAll(["./", "./index.html"]))));
-  self.skipWaiting();
-});
+// Retired: the preview moved to /anvil-preview/. This worker replaces the old /anvil-workout/preview/ one,
+// removes itself and its caches, and sends any open window back to the live app.
+self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => {
-  event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME && mine(k)).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
-});
-self.addEventListener("message", (event) => {
-  if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
-});
-self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") return;
-  const url = new URL(event.request.url);
-  if (url.origin !== self.location.origin) return;
-  event.respondWith(
-    fetch(event.request).then((res) => {
-      if (res.ok) {
-        const copy = res.clone();
-        caches.open(CACHE_NAME).then((c) => c.put(event.request, copy));
-      }
-      return res;
-    }).catch(() => caches.open(CACHE_NAME).then(async (c) => (await c.match(event.request)) || (event.request.mode === "navigate" && ((await c.match("./index.html")) || (await c.match("./")))) || Response.error()))
-  );
+  event.waitUntil((async () => {
+    try {
+      const keys = await caches.keys();
+      await Promise.all(keys.filter((k) => k.startsWith("anvil-preview-")).map((k) => caches.delete(k)));
+    } catch (e) {}
+    try { await self.clients.claim(); } catch (e) {}
+    const wins = await self.clients.matchAll({ type: "window" });
+    await self.registration.unregister();
+    const live = new URL("../", self.registration.scope).href;
+    await Promise.all(wins.map((c) => c.navigate(live).catch(() => {})));
+  })());
 });

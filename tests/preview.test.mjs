@@ -1,7 +1,10 @@
-// The /preview/ build shares the origin (and so localStorage + Cache Storage) with live. It must stay isolated.
+// The preview build (/anvil-preview/) shares the origin (and so localStorage + Cache Storage) with live. It must stay isolated.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { startServer, openApp, closeBrowser, ls, previewSite, makeGas, browser, sleep } from "./helpers.mjs";
+import fs from "node:fs";
+import path from "node:path";
+import { execFileSync } from "node:child_process";
+import { startServer, openApp, closeBrowser, ls, previewSite, makeGas, browser, sleep, ROOT } from "./helpers.mjs";
 import { KEYS, stewartState, walksFixture } from "./fixtures.mjs";
 
 let srv, site;
@@ -13,7 +16,7 @@ const dumpLive = (page) => page.evaluate((keys) => keys.map((k) => localStorage.
 
 test("preview starts with its own empty data, writes only anvil-preview:* keys, never touches live keys", async () => {
   const gas = makeGas();
-  const app = await openApp(srv.url, { gas, path: "preview/", storage: liveSeed() });
+  const app = await openApp(srv.url, { gas, path: "anvil-preview/", storage: liveSeed() });
   const liveBefore = await dumpLive(app.page);
   assert.equal(await app.page.evaluate(() => ANVIL_PREVIEW), true);
   assert.equal(await app.page.evaluate(() => state.history.length), 0);
@@ -33,7 +36,7 @@ test("preview starts with its own empty data, writes only anvil-preview:* keys, 
 });
 
 test("'Copy my real data into Preview' is a one-way copy", async () => {
-  const app = await openApp(srv.url, { path: "preview/", storage: liveSeed() });
+  const app = await openApp(srv.url, { path: "anvil-preview/", storage: liveSeed() });
   const liveBefore = await dumpLive(app.page);
   await app.page.evaluate(() => copyLiveIntoPreview());
   assert.equal(await app.page.evaluate(() => state.history.length), 10);
@@ -55,12 +58,55 @@ test("preview and live service workers keep separate caches and don't delete eac
   const page = await ctx.newPage();
   const ready = () => page.waitForFunction(async () => { const r = await navigator.serviceWorker.getRegistration(location.href); return !!(r && r.active); }, { timeout: 10000 });
   await page.goto(srv.url, { waitUntil: "load" }); await ready(); await sleep(500);
-  await page.goto(srv.url + "preview/", { waitUntil: "load" }); await ready(); await sleep(800);
+  await page.goto(srv.url + "anvil-preview/", { waitUntil: "load" }); await ready(); await sleep(800);
   const names = await page.evaluate(() => caches.keys());
   const v = await page.evaluate(() => APP_VERSION);
   assert.ok(names.includes(v), `live cache kept: ${names}`);
   assert.ok(names.includes("anvil-preview-" + v), `preview cache: ${names}`);
   const regs = await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).map((r) => new URL(r.scope).pathname).sort());
-  assert.deepEqual(regs, ["/", "/preview/"]);
+  assert.deepEqual(regs, ["/", "/anvil-preview/"]);
   await ctx.close();
+});
+
+test("legacy /preview/ path is still detected as preview (safety)", async () => {
+  const s2 = previewSite({ oldPreviewAt: "old/preview" }); const srv2 = await startServer(s2);
+  const app = await openApp(srv2.url, { path: "old/preview/", storage: liveSeed() });
+  assert.equal(await app.page.evaluate(() => [ANVIL_PREVIEW, STORAGE].join()), "true,anvil-preview:anvil_app_v3");
+  await app.close(); srv2.server.close();
+});
+
+test("a phone stuck on the old /preview/ build gets its worker + caches removed and lands on the live app", async () => {
+  // Before: the old preview build is installed at /preview/ (its SW + anvil-preview-* cache), live at /.
+  const old = previewSite(); fs.rmSync(path.join(old, "preview"), { recursive: true });
+  execFileSync(path.join(ROOT, "scripts", "make-preview.sh"), [path.join(old, "preview")], { stdio: "ignore" });
+  const s2 = await startServer(old);
+  const b = await browser(); const ctx = await b.createBrowserContext(); const page = await ctx.newPage();
+  const regs = () => page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).map((r) => new URL(r.scope).pathname).sort());
+  await page.goto(s2.url, { waitUntil: "load" }); await sleep(800);
+  await page.goto(s2.url + "preview/", { waitUntil: "load" });
+  await page.waitForFunction(async () => { const r = await navigator.serviceWorker.getRegistration(location.href); return !!(r && r.active) && new URL(r.scope).pathname === "/preview/"; }, { timeout: 10000 });
+  await sleep(800);
+  assert.deepEqual(await regs(), ["/", "/preview/"]);
+  assert.ok((await page.evaluate(() => caches.keys())).some((k) => k.startsWith("anvil-preview-")));
+  // After: this repo's preview/ (redirect page + retiring worker) is published. Reopen the stuck page.
+  s2.setRoot(previewSite());
+  await page.goto(s2.url + "preview/", { waitUntil: "load" });
+  await page.waitForFunction(() => location.pathname === "/" && !!document.querySelector("#app header"), { timeout: 10000 });
+  await sleep(800);
+  assert.deepEqual(await regs(), ["/"]);
+  assert.equal((await page.evaluate(() => caches.keys())).filter((k) => k.startsWith("anvil-preview-")).length, 0);
+  assert.equal(await page.evaluate(() => ANVIL_PREVIEW), false);
+  await ctx.close(); s2.server.close();
+});
+
+test("the retiring /preview/ worker unregisters itself", async () => {
+  const s2 = await startServer(previewSite());
+  const b = await browser(); const ctx = await b.createBrowserContext(); const page = await ctx.newPage();
+  await page.goto(s2.url + "favicon.svg", { waitUntil: "load" });
+  await page.evaluate(() => navigator.serviceWorker.register("/preview/sw.js", { scope: "/preview/" }));
+  await page.goto(s2.url + "preview/manifest.json", { waitUntil: "load" }).catch(() => {});
+  await sleep(1500);
+  const regs = await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).map((r) => new URL(r.scope).pathname));
+  assert.ok(!regs.includes("/preview/"), `still registered: ${regs}`);
+  await ctx.close(); s2.server.close();
 });

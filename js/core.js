@@ -1,12 +1,13 @@
 // ANVIL · Constants, programs (Day A/B lists), ladders, wave + balance-chain helpers, icons.
 // Classic script (shared global scope, no build step); load order is set in index.html.
-// Preview build (served from /preview/ on the same origin as live): every storage key gets a prefix so the
+// Preview build (served from /anvil-preview/ — its own repo — on the same origin as live; the old /preview/ path is
+// still recognised for safety): every storage key gets a prefix so the
 // preview can never read-modify-write the live app's data, and cloud sync/restore are switched off.
-const ANVIL_PREVIEW = /\/preview\//.test(location.pathname);
+const ANVIL_PREVIEW = /\/(anvil-)?preview\//.test(location.pathname);
 const PREVIEW_PREFIX = "anvil-preview:";
 function K(key){ return ANVIL_PREVIEW ? PREVIEW_PREFIX + key : key; }
 const STORAGE = K("anvil_app_v3");
-const APP_VERSION = "anvil-v45";
+const APP_VERSION = "anvil-v46";
 const CUE_LOUDNESS = 2.4;
 const CUE_MAX_GAIN = 0.95;
 const SET_OPTS = [1,2,3,4,5];

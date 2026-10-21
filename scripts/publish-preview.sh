@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
-# Put the current branch's build at /anvil-workout/preview/ WITHOUT touching the live app at the root.
-# Builds a commit = origin/main + preview/ on local branch "preview-pages".
+# Publish the current branch's build as the preview at https://stewartcampbell88-commits.github.io/anvil-preview/
+# (repo Stewartcampbell88-commits/anvil-preview, Pages from main /). It is OUTSIDE the live app's scope
+# (/anvil-workout/), so the installed ANVIL app can never open it. The live repo is not touched at all.
 #   scripts/publish-preview.sh          → tests + build + local commit only (nothing pushed)
-#   scripts/publish-preview.sh --push   → also push that commit to main (publishes the preview; live root unchanged)
+#   scripts/publish-preview.sh --push   → also push that commit to anvil-preview main (publishes the preview)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
+PREVIEW_REPO="${PREVIEW_REPO:-https://github.com/Stewartcampbell88-commits/anvil-preview.git}"
+PREVIEW_URL="https://stewartcampbell88-commits.github.io/anvil-preview/"
 npm test || { echo "TESTS FAILED — not building the preview"; exit 1; }
 SRC_REV="$(git rev-parse --short HEAD)"
-git fetch -q origin main
-WT="$(mktemp -d)/pages"
-git worktree add -q -B preview-pages "$WT" origin/main
-trap 'git worktree remove --force "$WT" >/dev/null 2>&1 || true' EXIT
-"$ROOT/scripts/make-preview.sh" "$WT/preview"
-# Root (live) files must be byte-identical to origin/main.
-(cd "$WT" && git add preview && git diff --cached --name-only | grep -v '^preview/' && { echo "would change live files"; exit 1; } || true)
-(cd "$WT" && git commit -qm "Preview build from $SRC_REV at /preview/ (live root unchanged)" && git log --oneline -1)
-if [[ "${1:-}" == "--push" ]]; then (cd "$WT" && git push -q origin preview-pages:main) && echo "preview published: https://stewartcampbell88-commits.github.io/anvil-workout/preview/"; else echo "(local only — add --push to publish)"; fi
+WT="$(mktemp -d)/anvil-preview"
+trap 'rm -rf "$(dirname "$WT")"' EXIT
+git clone -q --depth 1 "$PREVIEW_REPO" "$WT" 2>/dev/null || { mkdir -p "$WT"; git -C "$WT" init -q -b main; git -C "$WT" remote add origin "$PREVIEW_REPO"; }
+(cd "$WT" && git rm -rqf --ignore-unmatch . >/dev/null)
+"$ROOT/scripts/make-preview.sh" "$WT/site"
+cp -r "$WT/site/." "$WT/"; rm -rf "$WT/site"; touch "$WT/.nojekyll"
+printf '# ANVIL preview\n\nTest build of [ANVIL](https://github.com/Stewartcampbell88-commits/anvil-workout) from %s. Own data (anvil-preview: keys), no sync. Published by scripts/publish-preview.sh — do not edit here.\n' "$SRC_REV" > "$WT/README.md"
+(cd "$WT" && git add -A && { git diff --cached --quiet && echo "preview already up to date"; } || git commit -qm "Preview build from anvil-workout $SRC_REV"; git log --oneline -1)
+if [[ "${1:-}" == "--push" ]]; then (cd "$WT" && git push -q origin HEAD:main) && echo "preview published: $PREVIEW_URL"; else echo "(local only — add --push to publish)"; fi

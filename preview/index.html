@@ -1,33 +1,41 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0d0d0d" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="ANVIL" />
-  <title>ANVIL Preview</title>
-  <link rel="manifest" href="manifest.json" />
-  <link rel="icon" href="icon.svg" />
-  <link rel="apple-touch-icon" href="icon-192.png" />
-  <link rel="stylesheet" href="css/app.css?v=anvil-v45" />
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>ANVIL</title>
+<style>body{background:#0d0d0d;color:#eee;font:16px system-ui,sans-serif;padding:2rem;text-align:center}a{color:#f5a623}</style>
 </head>
 <body>
-<main id="app">
-  <p class="help">Opening… If this stays here, open the file in Chrome (Android) or Safari (iPhone), not in a preview.</p>
-</main>
-<div id="toast" class="toast hide"></div>
-<div id="howto"></div>
-<input type="file" id="import-file" accept="application/json,.json" class="hide" />
-<script src="js/core.js?v=anvil-v45"></script>
-<script src="js/walk.js?v=anvil-v45"></script>
-<script src="js/audio.js?v=anvil-v45"></script>
-<script src="js/state.js?v=anvil-v45"></script>
-<script src="js/session.js?v=anvil-v45"></script>
-<script src="js/progress.js?v=anvil-v45"></script>
-<script src="js/render.js?v=anvil-v45"></script>
-<script src="js/howto.js?v=anvil-v45"></script>
-<script src="js/main.js?v=anvil-v45"></script>
+<!-- The preview used to live here, inside the installed app's scope, so the installed ANVIL app could get stuck on it.
+     It now lives at /anvil-preview/. This page removes the old preview's service worker and sends you to the real app. -->
+<p>Opening ANVIL…</p>
+<p><small>The test build moved to <a href="/anvil-preview/">/anvil-preview/</a>.</small></p>
+<script>
+(function () {
+  var live = new URL("../", location.href).href;
+  var here = new URL("./", location.href).href;
+  var done = false;
+  function go(){ if (done) return; done = true; location.replace(live); }
+  setTimeout(go, 2500);
+  (async function () {
+    try {
+      var keepCaches = false;
+      if ("serviceWorker" in navigator) {
+        var regs = await navigator.serviceWorker.getRegistrations();
+        keepCaches = regs.some(function (r) { return r.scope.indexOf("/anvil-preview/") !== -1; });
+        await Promise.all(regs.filter(function (r) { return r.scope === here; }).map(function (r) { return r.unregister(); }));
+      }
+      // Old preview caches; left alone if the new /anvil-preview/ build (same cache names) is installed in this browser.
+      if (!keepCaches && window.caches) {
+        var keys = await caches.keys();
+        await Promise.all(keys.filter(function (k) { return k.indexOf("anvil-preview-") === 0; }).map(function (k) { return caches.delete(k); }));
+      }
+    } catch (e) {}
+    go();
+  })();
+})();
+</script>
 </body>
 </html>

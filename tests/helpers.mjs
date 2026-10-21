@@ -155,12 +155,15 @@ export async function openApp(baseUrl, opts = {}){
   return { page, context, errors, net, gas, async close(){ await context.close(); } };
 }
 
-/** A served copy of the app with the /preview/ build next to it (like Pages would after publish-preview). */
-export function previewSite(){
+/** A served copy of the app with the preview build at /anvil-preview/ (its own Pages repo, same origin) and the
+ *  retired /preview/ redirect from this repo. opts.oldPreviewAt: also build a real (old-style) preview at that path. */
+export function previewSite(opts = {}){
   const t = fs.mkdtempSync(path.join(os.tmpdir(), "anvil-site-"));
   for (const f of ["index.html", "sw.js", "manifest.json", "favicon.svg", "icon.svg", "icon-192.png", "icon-192-maskable.png", "icon-512.png", "icon-512-maskable.png"]) fs.copyFileSync(path.join(ROOT, f), path.join(t, f));
   for (const d of ["css", "js", "sounds"]) fs.cpSync(path.join(ROOT, d), path.join(t, d), { recursive: true });
-  execFileSync(path.join(ROOT, "scripts", "make-preview.sh"), [path.join(t, "preview")], { stdio: "ignore" });
+  execFileSync(path.join(ROOT, "scripts", "make-preview.sh"), [path.join(t, "anvil-preview")], { stdio: "ignore" });
+  fs.cpSync(path.join(ROOT, "preview"), path.join(t, "preview"), { recursive: true });
+  if (opts.oldPreviewAt) execFileSync(path.join(ROOT, "scripts", "make-preview.sh"), [path.join(t, opts.oldPreviewAt)], { stdio: "ignore" });
   return t;
 }
 
