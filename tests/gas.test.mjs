@@ -92,3 +92,29 @@ test("a log from a different program under the same name is archived first", () 
   g.post(payload("Alexis", 8, { programId: "anvil" }));
   assert.ok(g.sheetRows("RawArchive").length >= 2);
 });
+
+test("Sessions tab: duration_min appended at the end; old 10-column tabs/rows/clients keep working", () => {
+  const g = makeGas();
+  // An existing Sheet made by the old script: 10-column header + an old row.
+  const sh = g.ss.insertSheet("Sessions");
+  sh.rows.push(["key", "date", "person", "program", "day", "exercise", "weight_kg", "target_reps", "reps_per_set", "result"]);
+  const hist = anvilHistory(2);
+  hist[0].durationSec = 2730; // 45.5 min
+  sh.rows.push([["Stewart", hist[1].date, "squat"].join("|"), hist[1].date, "Stewart", "ANVIL", "A", "Squat", 60, 8, "8, 8, 9", "ok"]);
+  const r = g.post({ name: "Stewart", data: { programId: "anvil", history: hist } });
+  assert.equal(r.ok, true);
+  const rows = g.sheetRows("Sessions");
+  assert.equal(rows[0][10], "duration_min");
+  const fresh = rows.filter((x) => x[1] === hist[0].date);
+  assert.ok(fresh.length >= 2);
+  for (const x of fresh) { assert.equal(x.length, 11); assert.equal(x[10], 45.5); }
+  assert.equal(rows[1][10] ?? "", "", "old row without a duration untouched");
+  // An old client (no durationSec) still writes rows, with a blank duration.
+  const g2 = makeGas(); g2.post(payload("Alexis", 2));
+  assert.deepEqual(g2.sheetRows("Sessions")[0].slice(-1), ["duration_min"]);
+  assert.equal(g2.sheetRows("Sessions")[1][10], "");
+  // A later sync with a duration for an already-written session fills the blank (e.g. synced before the redeploy).
+  const h3 = anvilHistory(1); g2.post({ name: "Marcus", data: { programId: "titan", history: h3 } });
+  h3[0].durationSec = 1800; g2.post({ name: "Marcus", data: { programId: "titan", history: h3 } });
+  for (const x of g2.sheetRows("Sessions").filter((x) => x[2] === "Marcus")) assert.equal(x[10], 30);
+});

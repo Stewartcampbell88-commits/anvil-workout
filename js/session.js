@@ -1,7 +1,62 @@
 // ANVIL · Logging sets, progression (wave / AMRAP / ladders / balance chain), rest timer, updates, body weight.
 // Classic script (shared global scope, no build step); load order is set in index.html.
+// ---- Overall workout clock (v47): starts at the first logged set, runs off timestamps in its own
+// K()-prefixed key, so screen lock / background / closing the app don't matter. Stops when the session is logged.
+const WORKOUT_CLOCK_KEY = K("anvil_workout_clock_v1");
+const CLOCK_IDLE_MS = 90 * 60 * 1000;   // no set for 90+ min → treat the session as forgotten
+const CLOCK_TAIL_MS = 5 * 60 * 1000;    // ... and end it at last set + 5 min
+function loadClock(){
+  try {
+    const c = JSON.parse(localStorage.getItem(WORKOUT_CLOCK_KEY) || "null");
+    return (c && Number.isFinite(c.startedAt) && Number.isFinite(c.lastSetAt)) ? c : null;
+  } catch { return null; }
+}
+function saveClock(c){ try { if (c) localStorage.setItem(WORKOUT_CLOCK_KEY, JSON.stringify(c)); else localStorage.removeItem(WORKOUT_CLOCK_KEY); } catch {} }
+function clockClear(){ saveClock(null); syncClockTicker(); }
+/** A set was just logged: start the clock (or restart it after a 90+ min gap) and note the time. */
+function clockNoteSet(now = Date.now()){
+  const c = loadClock();
+  if (!c || now - c.lastSetAt > CLOCK_IDLE_MS) saveClock({ startedAt: now, lastSetAt: now });
+  else saveClock({ ...c, lastSetAt: Math.max(c.lastSetAt, now) });
+}
+function clockEndAt(c, now = Date.now()){ return (now - c.lastSetAt > CLOCK_IDLE_MS) ? c.lastSetAt + CLOCK_TAIL_MS : now; }
+function clockElapsedSec(now = Date.now()){
+  const c = loadClock();
+  return c ? Math.max(0, Math.floor((clockEndAt(c, now) - c.startedAt) / 1000)) : null;
+}
+/** Timing to save on a session (null when no set started the clock, e.g. sets ticked before v47). */
+function workoutTiming(now = Date.now()){
+  const c = loadClock();
+  if (!c) return null;
+  const durationSec = Math.max(0, Math.round((clockEndAt(c, now) - c.startedAt) / 1000));
+  return { startedAt: new Date(c.startedAt).toISOString(), endedAt: new Date(c.startedAt + durationSec * 1000).toISOString(), durationSec };
+}
+function fmtClock(sec){
+  const s = Math.max(0, Math.floor(sec)), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  return h ? `${h}:${String(m).padStart(2,"0")}:${String(r).padStart(2,"0")}` : `${m}:${String(r).padStart(2,"0")}`;
+}
+function fmtDurMin(sec){
+  const m = Math.max(1, Math.round((Number(sec) || 0) / 60));
+  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2,"0")} min`;
+}
+// Header clock: ticks once a second only while the page is visible and a clock is running.
+let clockTimer = null;
+function clockTick(){
+  const sec = clockElapsedSec();
+  if (sec == null) { syncClockTicker(); return; }
+  document.querySelectorAll("[data-wclock]").forEach(el => { const t = fmtClock(sec); if (el.textContent !== t) el.textContent = t; });
+}
+function syncClockTicker(){
+  const want = document.visibilityState !== "hidden" && !!loadClock() && !!document.querySelector("[data-wclock]");
+  if (want && !clockTimer) clockTimer = setInterval(clockTick, 1000);
+  else if (!want && clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+}
+document.addEventListener("visibilitychange", () => { syncClockTicker(); if (document.visibilityState === "visible") clockTick(); });
+
 function markSet(ei, si){
   const wasResolved = exerciseResolved(state.exercises[ei]);
+  const prev = state.exercises[ei]?.setsLog?.[si];
+  if (prev && !prev.ok && !prev.miss) clockNoteSet();
   state.exercises = state.exercises.map((ex,i) => {
     if (i!==ei) return ex;
     const log = ex.setsLog.map((s,j) => {
@@ -59,6 +114,7 @@ function skipExercise(ei){
 function resetChecks(){
   state.exercises = state.exercises.map(ex => ({...ex, skipped:false, setsLog: blankSets(ex.sets)}));
   clearExpandedEx();
+  clockClear();
   save(); render();
 }
 function setProgram(id, dayIndex=0){
@@ -67,6 +123,7 @@ function setProgram(id, dayIndex=0){
   const progress = captureProgress(state.exercises, state.liftProgress);
   state = {...state, programId: program.id, dayIndex: day, liftProgress: progress, exercises: applyProgress(seedProgram(program.id, day), progress, program.id)};
   clearExpandedEx();
+  clockClear();
   save(); render();
 }
 function setDay(dayIndex){
@@ -77,6 +134,7 @@ function setDay(dayIndex){
   state.liftProgress = progress;
   state.exercises = applyProgress(seedProgram(state.programId, day), progress, state.programId);
   clearExpandedEx();
+  clockClear();
   save(); render();
 }
 function addExercise(def){
@@ -333,7 +391,9 @@ function logSession(){
   state.exercises = exercises;
   state.liftProgress = captureProgress(exercises, state.liftProgress);
   const dayLabel = getProgram(programId)?.days?.[state.dayIndex]?.label || "";
-  state.history = [{date:new Date().toISOString(), programId, day: dayLabel, notes, lifts}, ...state.history].slice(0,HISTORY_MAX);
+  const timing = workoutTiming();
+  state.history = [{date:new Date().toISOString(), programId, day: dayLabel, notes, lifts, ...(timing || {})}, ...state.history].slice(0,HISTORY_MAX);
+  clockClear();
   ui.pendingHolds = balanceHolds.length ? balanceHolds : null;
   save();
   newLocalActivity();

@@ -3,7 +3,8 @@
  *
  * Receives each phone's full ANVIL/EMBER/TITAN log (POST, text/plain JSON) and writes:
  *   Raw        one row per person, latest full JSON (split across cells if > 45k chars)
- *   Sessions   one row per lift per session (deduped)
+ *   Sessions   one row per lift per session (deduped); duration_min (last column, v47+) is that
+ *              whole workout's length, repeated on each lift row; blank for older sessions/clients
  *   Bodyweight one row per weigh-in (deduped, latest kg wins)
  *   Walks      one row per walk (deduped)
  *   RawArchive the previous Raw copy, kept whenever a sync would shrink the log (fewer sessions,
@@ -57,7 +58,7 @@ const ARCHIVE_MAX = 60;              // RawArchive rows kept (all names), oldest
 const TABS = {
   Raw:        ["person", "updatedAt", "appVersion", "chars", "parts", "json_1"],
   RawArchive: ["person", "archivedAt", "updatedAt", "appVersion", "chars", "parts", "json_1"],
-  Sessions:   ["key", "date", "person", "program", "day", "exercise", "weight_kg", "target_reps", "reps_per_set", "result"],
+  Sessions:   ["key", "date", "person", "program", "day", "exercise", "weight_kg", "target_reps", "reps_per_set", "result", "duration_min"],
   Bodyweight: ["key", "date", "person", "kg"],
   Walks:      ["key", "date", "person", "minutes", "km"],
 };
@@ -367,17 +368,33 @@ function readRaw_(ss, person) {
   };
 }
 
+/** Workout length in minutes (1 decimal) from a session's durationSec; "" when missing (older app versions). */
+function durMin_(s) { const v = Number(s && s.durationSec); return (isFinite(v) && v > 0) ? Math.round(v / 6) / 10 : ""; }
+
 function writeSessions_(ss, person, data) {
   const sh = tab_(ss, "Sessions");
+  const DUR_COL = TABS.Sessions.length; // 11: appended at the end so old rows/columns keep their places
+  // A Sheet made by the pre-v47 script has a 10-column header: add the new heading once.
+  if (String(sh.getRange(1, DUR_COL).getValues()[0][0] || "") !== "duration_min") {
+    sh.getRange(1, DUR_COL).setValue("duration_min");
+  }
   const have = keyIndex_(sh);
+  const n = sh.getLastRow() - 1;
+  const durCells = n > 0 ? sh.getRange(2, DUR_COL, n, 1).getValues() : [];
   const rows = [];
   const hist = Array.isArray(data.history) ? data.history : [];
   hist.forEach(function (s) {
     if (!s || !s.date || !Array.isArray(s.lifts)) return;
     const program = PROGRAM_NAMES[s.programId] || String(s.programId || PROGRAM_NAMES[data.programId] || "");
+    const dur = durMin_(s);
     s.lifts.forEach(function (l, idx) {
       if (!l) return;
       const key = [person, s.date, l.id || l.name || idx].join("|");
+      if (have[key] > 0) { // already written: only fill a blank duration (e.g. row written before this column existed)
+        const cell = durCells[have[key] - 2];
+        if (dur !== "" && cell && (cell[0] === "" || cell[0] == null)) { sh.getRange(have[key], DUR_COL).setValue(dur); cell[0] = dur; }
+        return;
+      }
       if (have[key]) return;
       have[key] = -1;
       const sets = Array.isArray(l.sets) ? l.sets : null;
@@ -386,7 +403,7 @@ function writeSessions_(ss, person, data) {
       let result = l.clean ? "ok" : "miss";
       if (sets && sets.some(function (x) { return !x || (!x.ok && !x.miss); })) result = "incomplete";
       rows.push([key, s.date, person, program, s.day || "", l.name || l.id || "",
-                 num_(l.weight), num_(l.reps), repsPerSet, result]);
+                 num_(l.weight), num_(l.reps), repsPerSet, result, dur]);
     });
   });
   rows.sort(function (a, b) { return a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0; });
@@ -442,7 +459,7 @@ function testPost() {
     name: "Stewart", appVersion: "test", syncedAt: new Date().toISOString(),
     data: {
       programId: "anvil",
-      history: [{ date: "2026-10-19T08:00:00.000Z", programId: "anvil", day: "Day A",
+      history: [{ date: "2026-10-19T08:00:00.000Z", programId: "anvil", day: "Day A", durationSec: 2820,
         lifts: [{ id: "squat", name: "Squat", weight: 60, reps: 8, clean: true,
                   sets: [{ ok: true, reps: 8 }, { ok: true, reps: 8 }, { ok: true, reps: 9 }] }] }],
       bodyWeightLog: [{ date: "2026-10-19", kg: 85.2 }],

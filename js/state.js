@@ -334,6 +334,7 @@ function applyBackup(raw){
         saveWalks();
       }
       load();
+      clockClear();
       stopRest();
       ui.panel = "none";
       ui.pending = null;

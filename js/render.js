@@ -173,7 +173,7 @@ function render(){
   } else if (settingsTab === "history") {
     settingsDetail = `<section class="panel"><p class="tiny">Session log</p>${
       state.history.length===0 ? `<p class="note">No sessions yet. Tick every set, then log.</p>`
-      : `<ol style="margin:.5rem 0 0;padding:0;list-style:none">${state.history.slice(0,8).map(h=>`<li style="margin-top:.75rem"><p style="margin:0;font-size:.875rem;font-weight:600">${esc(fmtWhen(h.date))}</p><p class="note">${esc((Array.isArray(h.notes) ? h.notes : []).join(" · "))}</p></li>`).join("")}</ol>`
+      : `<ol style="margin:.5rem 0 0;padding:0;list-style:none">${state.history.slice(0,8).map(h=>`<li style="margin-top:.75rem"><p style="margin:0;font-size:.875rem;font-weight:600">${esc(fmtWhen(h.date))}${h.durationSec > 0 ? ` <span class="muted" style="font-weight:400">· ${esc(fmtDurMin(h.durationSec))}</span>` : ""}</p><p class="note">${esc((Array.isArray(h.notes) ? h.notes : []).join(" · "))}</p></li>`).join("")}</ol>`
     }</section>`;
   } else if (settingsTab === "progress") {
     if (!PROGRESS_RANGES[ui.progressRange]) ui.progressRange = "1m";
@@ -226,6 +226,12 @@ function render(){
     const selectHtml = liftOpts.length
       ? `<select class="progress-select" data-act="progress-lift" aria-label="Lift">${liftOpts.map(o=>`<option value="${esc(o.id)}"${o.id===ui.progressLiftId?" selected":""}>${esc(o.name)}</option>`).join("")}</select>`
       : `<p class="note" style="margin-top:.5rem">No lifts logged yet.</p>`;
+    // Workout time (sessions timed by the v47+ workout clock)
+    const timed = inRange(state.history.filter(h => h && h.durationSec > 0).map(h => ({ t: h.date, y: h.durationSec })).reverse());
+    const lastTimed = state.history.find(h => h && h.durationSec > 0);
+    const timeHtml = lastTimed ? `<section class="panel"><div class="chart-head"><p class="tiny">Workout time</p><span class="chart-unit">min</span></div>
+        ${statRow([{ lab:"Last", val:fmtDurMin(lastTimed.durationSec) }, { lab:"Avg", val: timed.length ? fmtDurMin(timed.reduce((a, p) => a + p.y, 0) / timed.length) : "—" }, { lab:"Timed", val:String(timed.length) }])}
+      </section>` : "";
     // Walks
     const wk = walkWeekBars();
     const walkTotal = wk.bars.reduce((a, b) => a + b.y, 0);
@@ -244,6 +250,7 @@ function render(){
         ${liftLegend}
         ${assistNote}
       </section>
+      ${timeHtml}
       <section class="panel"><div class="chart-head"><p class="tiny">Walks / week</p><span class="chart-unit">${esc(wk.unit)}</span></div>
         ${walks.length ? statRow([{ lab:"Total", val:String(Math.round(walkTotal)) }, { lab:"Walks", val:String(wk.bars.reduce((a, b) => a + b.n, 0)) }, { lab:"Avg/wk", val:fmtNum(walkTotal / wk.bars.length) }]) : ""}
         ${walks.length ? walkChart : `<p class="chart-empty">No walks yet — use the Walk tab.</p>`}
@@ -385,9 +392,11 @@ ${restorePinField(".5rem")}
     </div>
     <p class="foot">Tap the big number to complete that set (tap again clears). − / + dial that set’s reps — going below the target marks it failed (red). Leave a lift blank or skip — it won’t count. Weight − can go negative (assist kg; less assist = progress). Last set AMRAP on most lifts — hit target+2 (or more) to add 2.5kg next time. Timed holds and early heave stages skip AMRAP. Ember / Anvil / Titan: 3 clean at a rung climbs 6→8→10→12, then 3×6 +2.5kg (plank waves 20→30→20s, no kg) — AMRAP load bump skips the wave climb that session. Heaves ladder: hang → feet assist → negatives → full (auto-graduate after wave). ANVIL Cossack ladder: supported → short → full depth → goblet (auto-graduate after wave; kg on final). Titan plate bench: 3 clean at 3×12 @ ≥10kg → barbell 3×6 @ 20kg (AMRAP at 12 @ ≥10kg also graduates). Other programs: 3 clean → +2 reps (or +2.5 kg at cap). 3 short sessions → reset week (drop kg first if loaded).</p>`;
 
+  const wsec = clockElapsedSec();
+  const wclock = wsec == null ? "" : ` · <span data-wclock aria-label="Workout time">${fmtClock(wsec)}</span>`;
   const headTitle = onWalk
     ? `<div class="head-title">${I.walk}<h1>WALK</h1></div><p class="sub muted">${walk.active ? "Walking…" : "Track a walk"}</p>`
-    : `<div class="head-title">${I.anvil}<h1>${esc(program.name)}</h1>${ANVIL_PREVIEW ? `<span class="tiny" style="color:var(--warn)">Preview</span>` : ""}</div><p class="sub muted">${esc(sub)}</p>`;
+    : `<div class="head-title">${I.anvil}<h1>${esc(program.name)}</h1>${ANVIL_PREVIEW ? `<span class="tiny" style="color:var(--warn)">Preview</span>` : ""}</div><p class="sub muted">${esc(sub)}${wclock}</p>`;
 
   const app = document.getElementById("app");
   app.classList.add("has-tabs");
@@ -407,6 +416,7 @@ ${restorePinField(".5rem")}
     ${settings}
     ${tabBar}
   `;
+  syncClockTicker();
 }
 
 document.addEventListener("pointerdown", unlockAudio, {once:true});
