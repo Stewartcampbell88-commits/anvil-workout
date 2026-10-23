@@ -25,7 +25,9 @@ document.getElementById("app").addEventListener("click", (e) => {
   }
   else if (act==="weight") bumpWeight(+btn.dataset.i, +btn.dataset.d);
   else if (act==="level") bumpLevel(+btn.dataset.i, +btn.dataset.d);
-  else if (act==="skip") { const ei=+btn.dataset.i; skipExercise(ei); if (ei===currentIndex(state.exercises)) { stopRest(); render(); } }
+  else if (act==="skip") onSkipTap(+btn.dataset.i);
+  else if (act==="skip-why") chooseSkipReason(btn.dataset.r);
+  else if (act==="skip-cancel") cancelSkip();
   else if (act==="rest") adjustRest(+btn.dataset.d);
   else if (act==="chart-pt") showChartPoint(btn.dataset.c, +btn.dataset.i);
   else if (act==="progress-range") { if (PROGRESS_RANGES[btn.dataset.r]) { ui.progressRange = btn.dataset.r; render(); } }

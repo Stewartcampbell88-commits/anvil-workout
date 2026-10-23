@@ -51,6 +51,7 @@ function render(){
           <h2 class="muted" style="margin:0">${exNameHtml(ex, ei)}</h2>
           <button class="skip on" data-act="skip" data-i="${ei}">Unskip</button>
         </div>
+        ${skipReasonText(ex.skipReason, ex.skipNote) ? `<p class="note" style="margin:.25rem 0 0">Skipped: ${esc(skipReasonText(ex.skipReason, ex.skipNote))}</p>` : ""}
       </article>`;
       }
       const statusLab = passed ? "passed" : failed ? "failed" : "done";
@@ -109,7 +110,7 @@ function render(){
       : `<div style="min-width:0;flex:1">
             <h2>${exNameHtml(ex, ei)}</h2>
             ${ex.note?`<p class="note">${esc(ex.note)}</p>`:""}
-            ${ex.skipped?`<p class="note">Skipped — won’t count</p>`:""}
+            ${ex.skipped?`<p class="note">${skipReasonText(ex.skipReason, ex.skipNote) ? `Skipped: ${esc(skipReasonText(ex.skipReason, ex.skipNote))} — won’t count` : "Skipped — won’t count"}</p>`:""}
           </div>`;
     return `${tag}
       <article class="card${isActive?" active":""}${ex.skipped?" skipped":""}${resolved && !ex.skipped ? " " + statusCls : ""}" id="ex-${esc(ex.id)}">
@@ -336,6 +337,15 @@ ${restorePinField(".6rem")}
       </div>
     </div>
   </div></div>` : "";
+  const skipAsk = ui.panel==="skip-why" && ui.skipAsk && state.exercises[ui.skipAsk.ei] ? `<div class="settings-sheet" role="dialog" aria-modal="true" aria-label="Why skip?"><div class="settings-sheet-inner">
+    <div class="settings-head"><div style="min-width:0"><h2>Why skip?</h2><p class="note" style="margin:.125rem 0 0">${esc(state.exercises[ui.skipAsk.ei].name)}</p></div><button class="icon-btn" data-act="skip-cancel" aria-label="Cancel">${I.x}</button></div>
+    <div class="settings-body" style="overflow-y:auto">
+      <div class="skip-why-list">${SKIP_REASONS.map((r, n) => r.id === "other"
+        ? `<button class="skip-why${ui.skipAsk.other ? " on" : ""}" data-act="skip-why" data-r="other"><span class="skip-why-n">${n+1}</span>Other (add note)</button>${ui.skipAsk.other ? `<input class="skip-note" data-skip-note type="text" maxlength="${SKIP_NOTE_MAX}" value="${esc(ui.skipAsk.note || "")}" placeholder="Short note, e.g. knee niggle" aria-label="Skip note" enterkeyhint="done" /><button class="primary skip-why-save" data-act="skip-why" data-r="other">Skip with note</button>` : ""}`
+        : `<button class="skip-why" data-act="skip-why" data-r="${r.id}"><span class="skip-why-n">${n+1}</span>${esc(r.label)}</button>`).join("")}</div>
+      <button class="skip-why-cancel" data-act="skip-cancel">Cancel</button>
+    </div>
+  </div></div>` : "";
   const settings = ui.panel==="settings" ? `<div class="settings-sheet" role="dialog" aria-modal="true" aria-label="Settings"><div class="settings-sheet-inner">
     <div class="settings-head"><h2>Settings</h2><button class="icon-btn" data-act="panel" data-p="settings" aria-label="Close">${I.x}</button></div>
     <div class="settings-body">
@@ -413,6 +423,7 @@ ${restorePinField(".5rem")}
     ${onWalk ? (updateBanner + hint + renderWalkBody()) : workoutBody}
     ${balanceHold}
     ${bodyweight}
+    ${skipAsk}
     ${settings}
     ${tabBar}
   `;
@@ -425,6 +436,9 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && walk.active) acquireWakeLock();
 });
 
+document.getElementById("app").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && e.target.closest("[data-skip-note]")) { e.preventDefault(); chooseSkipReason("other"); }
+});
 document.getElementById("app").addEventListener("change", (e) => {
   const f = e.target.closest("[data-sync]");
   if (!f) return;
@@ -433,6 +447,8 @@ document.getElementById("app").addEventListener("change", (e) => {
 });
 
 document.getElementById("app").addEventListener("input", (e) => {
+  const sn = e.target.closest("[data-skip-note]");
+  if (sn) { if (ui.skipAsk) ui.skipAsk.note = sn.value; return; }
   const rn = e.target.closest("[data-restore-name]");
   if (rn) { const was = restoreTrusted(); ui.restoreName = rn.value.trim().slice(0, 40); if (was !== restoreTrusted()) { render(); const n = document.querySelector("[data-restore-name]"); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } } return; }
   const rp = e.target.closest("[data-restore-pin]");

@@ -207,3 +207,13 @@ main.has-tabs { padding-bottom: max(5.5rem, calc(env(safe-area-inset-bottom) + 4
 .ht-fig .hbarl{stroke:#ff4d1c;stroke-width:3.5;stroke-linecap:round}
 .ht-fig .hcab{stroke:#555;stroke-width:1.5;stroke-dasharray:3 3}
 .ht-fig .hrot{fill:none;stroke:#ff4d1c;stroke-width:2;stroke-linecap:round;opacity:.8}
+
+/* Skip → why sheet (v48) */
+.skip-why-list { display:grid; gap:0.5rem; }
+.skip-why { display:flex; align-items:center; gap:0.75rem; width:100%; min-height:3.25rem; padding:0 1rem; border-radius:0.75rem; background:var(--border); color:var(--fg); font-weight:600; font-size:1rem; text-align:left; }
+.skip-why.on { background:var(--primary); color:var(--primary-fg); }
+.skip-why-n { width:1.5rem; flex-shrink:0; font-variant-numeric:tabular-nums; color:var(--muted); font-weight:700; }
+.skip-why.on .skip-why-n { color:inherit; }
+.skip-note { width:100%; min-height:3rem; border-radius:0.75rem; padding:0 0.875rem; font:inherit; font-size:1rem; background:var(--surface, var(--border)); color:var(--fg); border:1px solid var(--primary); }
+.skip-why-cancel { width:100%; min-height:3.25rem; margin-top:0.875rem; border-radius:0.75rem; font-weight:700; font-size:1rem; background:transparent; color:var(--muted); border:1px solid var(--border); }
+.skip-why-save { width:100%; min-height:3.25rem; border-radius:0.75rem; font-weight:700; font-size:1rem; }

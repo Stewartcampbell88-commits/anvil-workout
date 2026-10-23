@@ -107,12 +107,39 @@ function bumpLevel(ei, d){
   state.liftProgress = captureProgress(state.exercises, state.liftProgress);
   save(); render();
 }
-function skipExercise(ei){
-  state.exercises = state.exercises.map((ex,i) => i===ei ? {...ex, skipped: !ex.skipped} : ex);
+/** Toggle skip. Skipping can carry a reason id (SKIP_REASONS) + note for "other"; unskipping clears both. */
+function skipExercise(ei, reason, note){
+  state.exercises = state.exercises.map((ex,i) => {
+    if (i!==ei) return ex;
+    const { skipReason, skipNote, ...rest } = ex;
+    if (ex.skipped) return {...rest, skipped:false};
+    const r = skipReasonId(reason), n = r === "other" ? cleanSkipNote(note) : "";
+    return {...rest, skipped:true, ...(r ? { skipReason:r } : {}), ...(n ? { skipNote:n } : {})};
+  });
   save(); render();
 }
+/** Skip button: a skipped lift unskips at once; otherwise ask why first (Cancel = no skip). */
+function onSkipTap(ei){
+  const ex = state.exercises[ei];
+  if (!ex) return;
+  if (ex.skipped) { skipExercise(ei); afterSkipToggle(ei); return; }
+  ui.skipAsk = { ei, other:false, note:"" };
+  ui.panel = "skip-why";
+  render();
+}
+function chooseSkipReason(reason){
+  const ask = ui.skipAsk;
+  if (!ask || !skipReasonId(reason)) return;
+  if (reason === "other" && !ask.other) { ui.skipAsk = {...ask, other:true}; render(); document.querySelector("[data-skip-note]")?.focus(); return; }
+  const note = reason === "other" ? (document.querySelector("[data-skip-note]")?.value ?? ask.note ?? "") : "";
+  ui.skipAsk = null; ui.panel = "none";
+  skipExercise(ask.ei, reason, note);
+  afterSkipToggle(ask.ei);
+}
+function cancelSkip(){ ui.skipAsk = null; ui.panel = "none"; render(); }
+function afterSkipToggle(ei){ if (ei===currentIndex(state.exercises)) { stopRest(); render(); } }
 function resetChecks(){
-  state.exercises = state.exercises.map(ex => ({...ex, skipped:false, setsLog: blankSets(ex.sets)}));
+  state.exercises = state.exercises.map(({skipReason, skipNote, ...ex}) => ({...ex, skipped:false, setsLog: blankSets(ex.sets)}));
   clearExpandedEx();
   clockClear();
   save(); render();
@@ -165,10 +192,16 @@ function logSession(){
     notes.push(successNote);
     return { weight: nextWeight, reps: nextReps, streak: streakAfterOk, held: false };
   }
-  const exercises = state.exercises.map(ex => {
+  const skips = [];
+  const exercises = state.exercises.map(({skipReason, skipNote, ...ex}) => {
     const touched = ex.setsLog.some(s => s.ok || s.miss);
     if (ex.skipped || !touched) {
-      if (ex.skipped) notes.push(`${ex.name}: skipped`);
+      if (ex.skipped) {
+        const why = skipReasonText(skipReason, skipNote);
+        notes.push(why ? `${ex.name}: Skipped: ${why}` : `${ex.name}: skipped`);
+        const r = skipReasonId(skipReason), n = cleanSkipNote(skipNote);
+        skips.push({ id: ex.id, name: ex.name, ...(r ? { reason: r, reasonText: why } : {}), ...(r === "other" && n ? { note: n } : {}) });
+      }
       return {...ex, skipped:false, setsLog: blankSets(ex.sets)};
     }
     // Snapshot working targets before wave / progression bumps
@@ -392,7 +425,7 @@ function logSession(){
   state.liftProgress = captureProgress(exercises, state.liftProgress);
   const dayLabel = getProgram(programId)?.days?.[state.dayIndex]?.label || "";
   const timing = workoutTiming();
-  state.history = [{date:new Date().toISOString(), programId, day: dayLabel, notes, lifts, ...(timing || {})}, ...state.history].slice(0,HISTORY_MAX);
+  state.history = [{date:new Date().toISOString(), programId, day: dayLabel, notes, lifts, ...(skips.length ? { skips } : {}), ...(timing || {})}, ...state.history].slice(0,HISTORY_MAX);
   clockClear();
   ui.pendingHolds = balanceHolds.length ? balanceHolds : null;
   save();

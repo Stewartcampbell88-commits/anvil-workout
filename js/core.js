@@ -7,7 +7,7 @@ const ANVIL_PREVIEW = /\/(anvil-)?preview\//.test(location.pathname);
 const PREVIEW_PREFIX = "anvil-preview:";
 function K(key){ return ANVIL_PREVIEW ? PREVIEW_PREFIX + key : key; }
 const STORAGE = K("anvil_app_v3");
-const APP_VERSION = "anvil-v47";
+const APP_VERSION = "anvil-v48";
 const CUE_LOUDNESS = 2.4;
 const CUE_MAX_GAIN = 0.95;
 const SET_OPTS = [1,2,3,4,5];
@@ -439,6 +439,29 @@ function applyProgress(exs, progress, programId){
     return next;
   });
 }
+/** Why a lift was skipped (v48). Ids are stored; labels are shown. "other" carries a short free-text note. */
+const SKIP_REASONS = [
+  { id:"injury",    label:"Injury" },
+  { id:"pain",      label:"Pain or discomfort" },
+  { id:"fatigue",   label:"Fatigue" },
+  { id:"time",      label:"Time constraint" },
+  { id:"equipment", label:"Equipment unavailable" },
+  { id:"heavy",     label:"Load too heavy" },
+  { id:"technique", label:"Technique breakdown" },
+  { id:"elsewhere", label:"Trained elsewhere" },
+  { id:"illness",   label:"Illness" },
+  { id:"other",     label:"Other" },
+];
+const SKIP_NOTE_MAX = 80;
+function skipReasonId(id){ return SKIP_REASONS.some(r => r.id === id) ? id : ""; }
+function cleanSkipNote(note){ return String(note ?? "").replace(/\s+/g, " ").trim().slice(0, SKIP_NOTE_MAX); }
+/** "Time constraint" · "Other: knee niggle" · "Other" · "" (no reason given / old data). */
+function skipReasonText(reason, note){
+  const r = SKIP_REASONS.find(x => x.id === reason);
+  const n = cleanSkipNote(note);
+  if (!r) return n;
+  return r.id === "other" && n ? `Other: ${n}` : r.label;
+}
 function hydrate(raw){
   if (!raw?.length) return null;
   const next = [];
@@ -450,6 +473,7 @@ function hydrate(raw){
       bw:e.bw, nocap:e.nocap, cap:e.cap, block:e.block??"Session", bilateral:e.bilateral, note:e.note, finisher:e.finisher,
       heaveLadder:e.heaveLadder, benchLadder:e.benchLadder, cossackLadder:e.cossackLadder, levels:e.levels, levelIndex: e.levels?.length ? (e.levelIndex??0) : e.levelIndex,
       streak:e.streak??0, failStreak:e.failStreak??0, skipped:e.skipped??false,
+      ...(e.skipped && skipReasonId(e.skipReason) ? { skipReason: e.skipReason, ...(cleanSkipNote(e.skipNote) ? { skipNote: cleanSkipNote(e.skipNote) } : {}) } : {}),
       setsLog: e.setsLog && e.setsLog.length===sets ? e.setsLog : blankSets(sets),
     });
   }
