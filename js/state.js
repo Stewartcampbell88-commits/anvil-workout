@@ -97,7 +97,7 @@ function load(){
       if (seed.benchLadder) out = {...out, benchLadder:true, levels: seed.levels};
       if (seed.cossackLadder) out = {...out, cossackLadder:true, bilateral:true, levels: seed.levels};
       if (seed.finisher) out = {...out, finisher:true, name: seed.name, note: seed.note, block: seed.block, cap: undefined, weight: Math.min(0, Number(out.weight)||0)};
-      if (seed.id === "slrdl") out = {...out, bilateral:true, note: seed.note};
+      if (seed.id === "xrdl") out = {...out, bilateral:true, note: seed.note};
       return out;
     });
     // ANVIL Day A v30: programmed abd → cossack ladder (keep Add-on abd if no seed cossack)
@@ -125,6 +125,16 @@ function load(){
         }
       }
     }
+    // ANVIL Day A v49: Crossed-leg forward fold / RDL replaces Single-leg RDL in the same slot (one-shot).
+    // Old slrdl progress + history stay untouched (liftProgress.slrdl is never deleted).
+    let xrdlChanged = false;
+    if (program.id === "anvil" && raw.anvilXrdlV49 !== true) {
+      xrdlChanged = true;
+      if (seedById["xrdl"] && !baseExs.some(e => e.id === "xrdl")) {
+        const i = baseExs.findIndex(e => e.id === "slrdl");
+        if (i >= 0) baseExs = [...baseExs.slice(0, i), toExercise({...seedById["xrdl"]}), ...baseExs.slice(i + 1)];
+      }
+    }
     // ANVIL v38 layout: reorder current day to seed order (Single-leg RDL A, Back extension last on A+B); keep extra add-ons after
     let layoutChanged = false;
     if (program.id === "anvil" && raw.anvilLayoutV38 !== true) {
@@ -150,7 +160,7 @@ function load(){
       cuePack: normalizeCuePack(raw.cuePack),
       loudCuesV33: true,
     };
-    if (normalizeWaveTargets() || needsCueMigration || layoutChanged) save();
+    if (normalizeWaveTargets() || needsCueMigration || layoutChanged || xrdlChanged) save();
   } catch (e) {
     rescueSaved(e);
     ui.loadFailed = true;
@@ -166,7 +176,7 @@ function saveState(){
     exercises: state.exercises, history: state.history, liftProgress: state.liftProgress,
     bodyWeightLog: state.bodyWeightLog || [],
     soundVolume: clampVolume(state.soundVolume), cuePack: normalizeCuePack(state.cuePack),
-    loudCuesV33: true, anvilLayoutV38: true,
+    loudCuesV33: true, anvilLayoutV38: true, anvilXrdlV49: true,
   }));
 }
 

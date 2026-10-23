@@ -30,7 +30,7 @@ test("old ANVIL save migrates: history kept byte-for-byte, Cossack replaces abd,
   const app = await openApp(srv.url, { storage: { [KEYS.STATE]: raw } });
   const s = await ls(app.page, KEYS.STATE);
   assert.deepEqual(s.history, raw.history, "history untouched");
-  assert.deepEqual(s.exercises.map((e) => e.id), ["squat", "bench", "row", "slrdl", "cossack", "sgm", "bext", "curl"]);
+  assert.deepEqual(s.exercises.map((e) => e.id), ["squat", "bench", "row", "xrdl", "cossack", "sgm", "bext", "curl"]);
   const by = Object.fromEntries(s.exercises.map((e) => [e.id, e]));
   assert.equal(by.squat.reps, 8);
   assert.equal(by.squat.weight, 60);

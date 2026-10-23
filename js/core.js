@@ -7,7 +7,7 @@ const ANVIL_PREVIEW = /\/(anvil-)?preview\//.test(location.pathname);
 const PREVIEW_PREFIX = "anvil-preview:";
 function K(key){ return ANVIL_PREVIEW ? PREVIEW_PREFIX + key : key; }
 const STORAGE = K("anvil_app_v3");
-const APP_VERSION = "anvil-v48";
+const APP_VERSION = "anvil-v49";
 const CUE_LOUDNESS = 2.4;
 const CUE_MAX_GAIN = 0.95;
 const SET_OPTS = [1,2,3,4,5];
@@ -231,7 +231,7 @@ const PROGRAMS = [
       bb("squat","Squat",3,8,120,"Day A"),
       bb("bench","Bench Press",3,8,120,"Day A"),
       bb("row","Bent over row",3,8,90,"Day A"),
-      bb("slrdl","Single-leg RDL",3,6,75,"Day A",{weight:5,bilateral:true,note:"Dumbbell. Reps are per leg. Soft knee, hips square, slow lower."}),
+      bb("xrdl","Crossed-leg straight-leg forward fold / RDL",3,6,75,"Day A",{weight:5,bilateral:true,note:"Cross one leg in front, legs straight (soft knees), hinge to a flat-back fold. Reps per side — switch the cross. Bodyweight or light dumbbell."}),
       bw("cossack", COSSACK_STAGES[0].name, 3, COSSACK_STAGES[0].startReps, 45, "Day A", {
         bilateral:true, cossackLadder:true, levels: COSSACK_STAGES.map(s=>s.name), levelIndex:0,
         note: COSSACK_STAGES[0].note
@@ -319,7 +319,7 @@ const LIBRARY = [
     bb("squat","Squat",3,8,120,"Add-on"), bb("front-squat","Front squat",3,6,150,"Add-on"),
     bb("goblet","Goblet squat",3,10,75,"Add-on",{cap:14}), bb("dl","Deadlift",3,5,180,"Add-on",{cap:5}),
     bb("rdl","RDL",3,8,120,"Add-on"), bb("db-rdl","Dumbbell RDL",3,10,90,"Add-on",{cap:14}),
-    bb("single-rdl","Single-leg RDL",3,8,75,"Add-on",{bilateral:true,cap:12}), bb("good-morning","Good morning",3,8,90,"Add-on"),
+    bb("single-rdl","Single-leg RDL",3,8,75,"Add-on",{bilateral:true,cap:12}), bb("xrdl","Crossed-leg straight-leg forward fold / RDL",3,6,75,"Add-on",{weight:5,bilateral:true,cap:12,note:"Cross one leg in front, legs straight (soft knees), hinge to a flat-back fold. Reps per side — switch the cross. Bodyweight or light dumbbell."}), bb("good-morning","Good morning",3,8,90,"Add-on"),
     bb("kb-swing","Kettlebell swing",3,15,60,"Add-on",{cap:20}), bb("hip-thrust","Hip thrust",3,10,75,"Add-on",{cap:14}),
     bw("glute-bridge","Glute bridge",3,12,45,"Add-on",{cap:20}), bw("bext","Back extension",3,10,75,"Add-on",{cap:14}),
   ]},

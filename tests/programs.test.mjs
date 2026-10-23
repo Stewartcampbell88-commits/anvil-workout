@@ -11,7 +11,7 @@ const days = (pid) => app.page.evaluate((pid) => getProgram(pid).days.map((d) =>
 test("ANVIL Day A / Day B lists (Back extension (twist) last on both)", async () => {
   const d = await days("anvil");
   assert.deepEqual(d.map((x) => x.label), ["A", "B"]);
-  assert.deepEqual(d[0].ids, ["squat", "bench", "row", "slrdl", "cossack", "sgm", "bext"]);
+  assert.deepEqual(d[0].ids, ["squat", "bench", "row", "xrdl", "cossack", "sgm", "bext"]);
   assert.deepEqual(d[1].ids, ["rdl", "ohp", "lunge", "psoas", "lmr", "heaves", "bext"]);
   assert.equal(d[0].names[6], "Back extension (twist)");
   assert.equal(d[1].names[6], "Back extension (twist)");
@@ -36,7 +36,7 @@ test("Back extension (twist) is a bodyweight finisher with 0 kg and no AMRAP", a
 
 test("fresh install opens ANVIL Day A and renders every lift card with no page errors", async () => {
   const ids = await app.page.$$eval("article.card", (els) => els.map((e) => e.id));
-  assert.deepEqual(ids, ["ex-squat", "ex-bench", "ex-row", "ex-slrdl", "ex-cossack", "ex-sgm", "ex-bext"]);
+  assert.deepEqual(ids, ["ex-squat", "ex-bench", "ex-row", "ex-xrdl", "ex-cossack", "ex-sgm", "ex-bext"]);
   assert.deepEqual(app.errors, []);
 });
 
