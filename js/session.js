@@ -223,6 +223,23 @@ function logSession(){
     if (usesAmrap(ex)) liftEntry.amrapReps = lastReps;
     lifts.push(liftEntry);
     if (!all) { notes.push(`${ex.name}: incomplete`); return {...ex, setsLog: blankSets(ex.sets)}; }
+    if (!clean && isNeckIso(ex)) {
+      // Neck iso: 3 short sessions → drop 5 s (never below 5 s). No kg involved.
+      let failStreak = (ex.failStreak||0)+1;
+      let reps = ex.reps;
+      if (failStreak >= 3) {
+        failStreak = 0;
+        reps = Math.max(NECK_START, reps - NECK_STEP);
+        notes.push(`${ex.name}: RESET WEEK — back to ${reps}s each`);
+      } else notes.push(`${ex.name}: short hold ${failStreak}/3 — stay at ${reps}s`);
+      return {...ex, streak:0, failStreak, reps, weight:0, setsLog: blankSets(ex.sets)};
+    }
+    if (isNeckIso(ex)) {
+      // Neck iso (v50): every clean session adds 5 s per direction, capped at 20 s. Outside the kg wave / balance chain.
+      const reps = Math.min(NECK_MAX, Math.max(NECK_START, (Number(ex.reps)||NECK_START) + NECK_STEP));
+      notes.push(reps > ex.reps ? `${ex.name}: hold → ${reps}s each` : `${ex.name}: max ${NECK_MAX}s each — hold there`);
+      return {...ex, streak:0, failStreak:0, reps, weight:0, setsLog: blankSets(ex.sets)};
+    }
     if (!clean) {
       let failStreak = (ex.failStreak||0)+1;
       let {reps, weight} = ex;

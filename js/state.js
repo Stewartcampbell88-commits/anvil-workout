@@ -74,7 +74,7 @@ function load(){
       const snapped = {};
       for (const [id, p] of Object.entries(liftProgress)) {
         if (!p || typeof p !== "object") { snapped[id] = p; continue; }
-        const skipSnap = id === "em-plank" || id === "em-heaves" || id === "tp-plank" || id === "tp-heaves";
+        const skipSnap = id === "em-plank" || id === "em-heaves" || id === "tp-plank" || id === "tp-heaves" || NECK_IDS.has(id);
         const reps = (!skipSnap && p.reps != null && !WAVE_REPS.includes(p.reps)) ? snapWaveRep(p.reps) : p.reps;
         snapped[id] = reps === p.reps ? p : {...p, reps};
       }
@@ -98,6 +98,7 @@ function load(){
       if (seed.cossackLadder) out = {...out, cossackLadder:true, bilateral:true, levels: seed.levels};
       if (seed.finisher) out = {...out, finisher:true, name: seed.name, note: seed.note, block: seed.block, cap: undefined, weight: Math.min(0, Number(out.weight)||0)};
       if (seed.id === "xrdl") out = {...out, bilateral:true, note: seed.note};
+      if (seed.neckIso) out = {...out, neckIso:true, name: seed.name, note: seed.note};
       return out;
     });
     // ANVIL Day A v30: programmed abd → cossack ladder (keep Add-on abd if no seed cossack)
@@ -135,6 +136,20 @@ function load(){
         if (i >= 0) baseExs = [...baseExs.slice(0, i), toExercise({...seedById["xrdl"]}), ...baseExs.slice(i + 1)];
       }
     }
+    // ANVIL + EMBER v50: Neck isometric (4-way) joins Day A and Day B as the last extra (one-shot).
+    // Appended to the saved day if missing; nothing else is moved, reset or removed.
+    let neckChanged = false;
+    if ((program.id === "anvil" || program.id === "ember") && raw.neckIsoV50 !== true) {
+      neckChanged = true;
+      const seedNeck = seeded.find(e => e.neckIso);
+      if (seedNeck && !baseExs.some(e => e.id === seedNeck.id)) {
+        // Sit right after the programmed lifts, before any user add-ons
+        const seedIds = new Set(seeded.map(e => e.id));
+        let at = 0;
+        baseExs.forEach((e, i) => { if (seedIds.has(e.id)) at = i + 1; });
+        baseExs = [...baseExs.slice(0, at), toExercise({...seedNeck}), ...baseExs.slice(at)];
+      }
+    }
     // ANVIL v38 layout: reorder current day to seed order (Single-leg RDL A, Back extension last on A+B); keep extra add-ons after
     let layoutChanged = false;
     if (program.id === "anvil" && raw.anvilLayoutV38 !== true) {
@@ -160,7 +175,7 @@ function load(){
       cuePack: normalizeCuePack(raw.cuePack),
       loudCuesV33: true,
     };
-    if (normalizeWaveTargets() || needsCueMigration || layoutChanged || xrdlChanged) save();
+    if (normalizeWaveTargets() || needsCueMigration || layoutChanged || xrdlChanged || neckChanged) save();
   } catch (e) {
     rescueSaved(e);
     ui.loadFailed = true;
@@ -176,7 +191,7 @@ function saveState(){
     exercises: state.exercises, history: state.history, liftProgress: state.liftProgress,
     bodyWeightLog: state.bodyWeightLog || [],
     soundVolume: clampVolume(state.soundVolume), cuePack: normalizeCuePack(state.cuePack),
-    loudCuesV33: true, anvilLayoutV38: true, anvilXrdlV49: true,
+    loudCuesV33: true, anvilLayoutV38: true, anvilXrdlV49: true, neckIsoV50: true,
   }));
 }
 

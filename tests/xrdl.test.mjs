@@ -45,7 +45,7 @@ test("v48 Day A save migrates: slrdl → xrdl in the same slot, everything else 
   const raw = v48DayA();
   const app = await openApp(srv.url, { storage: { [KEYS.STATE]: raw } });
   const s = await ls(app.page, KEYS.STATE);
-  assert.deepEqual(s.exercises.map((e) => e.id), ["squat", "bench", "row", "xrdl", "cossack", "sgm", "bext", "curl"]);
+  assert.deepEqual(s.exercises.map((e) => e.id), ["squat", "bench", "row", "xrdl", "cossack", "sgm", "bext", "neck", "curl"]);
   const x = s.exercises[3];
   assert.equal(x.name, NAME); assert.equal(x.weight, 5); assert.equal(x.reps, 6); assert.equal(x.bilateral, true);
   assert.equal(s.exercises[0].setsLog[0].ok, true, "in-progress squat set kept");
@@ -58,7 +58,7 @@ test("v48 Day A save migrates: slrdl → xrdl in the same slot, everything else 
   assert.equal(await app.page.$("#ex-slrdl"), null);
   // Stable on reload
   await reload(app);
-  assert.deepEqual((await ls(app.page, KEYS.STATE)).exercises.map((e) => e.id), ["squat", "bench", "row", "xrdl", "cossack", "sgm", "bext", "curl"]);
+  assert.deepEqual((await ls(app.page, KEYS.STATE)).exercises.map((e) => e.id), ["squat", "bench", "row", "xrdl", "cossack", "sgm", "bext", "neck", "curl"]);
   // Old slrdl history still renders in Progress / Session log
   await app.page.evaluate(() => { ui.panel = "settings"; ui.settingsTab = "progress"; render(); ui.settingsTab = "history"; render(); });
   assert.deepEqual(app.errors, []);
@@ -78,7 +78,7 @@ test("Stewart on Day B: switching to Day A shows the new lift; slrdl progress su
   const app = await openApp(srv.url, { storage: { [KEYS.STATE]: raw } });
   await app.page.evaluate(() => setDay(0));
   const s = await ls(app.page, KEYS.STATE);
-  assert.deepEqual(s.exercises.map((e) => e.id), ["squat", "bench", "row", "xrdl", "cossack", "sgm", "bext"]);
+  assert.deepEqual(s.exercises.map((e) => e.id), ["squat", "bench", "row", "xrdl", "cossack", "sgm", "bext", "neck"]);
   assert.deepEqual(s.liftProgress.slrdl, { reps: 8, weight: 10, streak: 0, failStreak: 0 });
   assert.equal(s.history.length, raw.history.length);
   assert.deepEqual(app.errors, []);
@@ -86,7 +86,7 @@ test("Stewart on Day B: switching to Day A shows the new lift; slrdl progress su
 });
 
 test("EMBER / TITAN saves are untouched by the v49 migration", async () => {
-  for (const [pid, day, ids] of [["ember", 0, ["em-squat", "em-bench", "em-row", "em-deadbug"]], ["titan", 0, ["tp-squat", "tp-bench", "tp-row", "tp-deadbug"]]]) {
+  for (const [pid, day, ids] of [["ember", 0, ["em-squat", "em-bench", "em-row", "em-deadbug", "em-neck"]], ["titan", 0, ["tp-squat", "tp-bench", "tp-row", "tp-deadbug"]]]) {
     const app = await openApp(srv.url, { storage: { [KEYS.STATE]: { programId: pid, dayIndex: day, exercises: [], history: [], liftProgress: {} } } });
     const s = await ls(app.page, KEYS.STATE);
     assert.deepEqual(s.exercises.map((e) => e.id), ids);

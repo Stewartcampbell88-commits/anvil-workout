@@ -74,7 +74,9 @@ function render(){
            <span class="kg${wNeg?" neg":""}">${fmtKg(ex.weight)}</span>
            <button class="icon-btn" data-act="weight" data-i="${ei}" data-d="2.5" aria-label="Increase weight">${I.plus}</button>
            <span class="muted" style="font-size:.875rem">${wNeg?"kg assist":"kg"}</span>`;
-    const load = ex.levels?.length
+    const load = isNeckIso(ex)
+      ? `<span class="muted" style="font-size:.875rem">Forward → left → back → right · ${esc(String(ex.reps))}s each · no kg</span>`
+      : ex.levels?.length
       ? `<button class="icon-btn" data-act="level" data-i="${ei}" data-d="-1" aria-label="Easier height">${I.minus}</button>
          <span class="level">${esc(level)}</span>
          <button class="icon-btn" data-act="level" data-i="${ei}" data-d="1" aria-label="Harder height">${I.plus}</button>
@@ -85,7 +87,7 @@ function render(){
     const sets = ex.skipped ? "" : `<div class="sets${tight?" tight":""}">${ex.setsLog.map((log,si) => {
       const shown = log.reps ?? ex.reps;
       const cls = log.ok ? "ok" : log.miss ? "miss" : "";
-      const hit = ex.bilateral ? `${shown} ea` : String(shown);
+      const hit = isNeckIso(ex) ? `${shown}s` : ex.bilateral ? `${shown} ea` : String(shown);
       const isLast = si === ex.setsLog.length - 1;
       const setLab = (isLast && amrap) ? "AMRAP" : String(si+1);
       const setAria = (isLast && amrap) ? "AMRAP last set" : ("Set " + (si+1));
@@ -116,7 +118,7 @@ function render(){
       <article class="card${isActive?" active":""}${ex.skipped?" skipped":""}${resolved && !ex.skipped ? " " + statusCls : ""}" id="ex-${esc(ex.id)}">
         <div class="row">
           ${titleBlock}
-          <p class="meta">${esc(targetLabel(ex))}<br>${ex.streak}/3 clean · ${ex.failStreak}/3 no-rep${amrap?`<br><span style="opacity:.7;font-size:.65rem">Last set AMRAP · +2 → next kg</span>`:""}</p>
+          <p class="meta">${esc(targetLabel(ex))}<br>${isNeckIso(ex) ? (ex.reps >= NECK_MAX ? `Max ${NECK_MAX}s · ${ex.failStreak}/3 no-rep` : `+${NECK_STEP}s next clean · max ${NECK_MAX}s`) : `${ex.streak}/3 clean · ${ex.failStreak}/3 no-rep`}${amrap?`<br><span style="opacity:.7;font-size:.65rem">Last set AMRAP · +2 → next kg</span>`:""}</p>
         </div>
         <div class="weight">${load}</div>
         ${isActive?`<div class="rest-box"><p class="cue" data-cue>${loggedCue}</p><p class="big ${tClass}" data-timer style="font-size:3rem">${remainText}</p>
@@ -201,7 +203,7 @@ function render(){
     const seriesAll = ui.progressLiftId ? liftSeries(ui.progressLiftId) : [];
     const useReps = isRepsChartLift(seriesAll);
     const lastName = seriesAll[seriesAll.length-1]?.name || "";
-    const secAxis = useReps && (/hang|plank/i.test(lastName) || /sec/i.test(lastName) || ui.progressLiftId==="em-plank" || ui.progressLiftId==="tp-plank");
+    const secAxis = useReps && (/hang|plank|neck/i.test(lastName) || /sec/i.test(lastName) || ui.progressLiftId==="em-plank" || ui.progressLiftId==="tp-plank");
     const axisLabel = useReps ? (secAxis ? "sec" : "reps") : "kg";
     let best = -Infinity, prCount = 0;
     const liftAll = seriesAll.map((p, i) => {

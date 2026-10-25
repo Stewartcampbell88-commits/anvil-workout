@@ -8,19 +8,19 @@ after(async () => { await app?.close(); srv?.server.close(); await closeBrowser(
 
 const days = (pid) => app.page.evaluate((pid) => getProgram(pid).days.map((d) => ({ label: d.label, ids: d.exercises.map((e) => e.id), names: d.exercises.map((e) => e.name) })), pid);
 
-test("ANVIL Day A / Day B lists (Back extension (twist) last on both)", async () => {
+test("ANVIL Day A / Day B lists (Back extension (twist) then Neck isometric extra on both)", async () => {
   const d = await days("anvil");
   assert.deepEqual(d.map((x) => x.label), ["A", "B"]);
-  assert.deepEqual(d[0].ids, ["squat", "bench", "row", "xrdl", "cossack", "sgm", "bext"]);
-  assert.deepEqual(d[1].ids, ["rdl", "ohp", "lunge", "psoas", "lmr", "heaves", "bext"]);
+  assert.deepEqual(d[0].ids, ["squat", "bench", "row", "xrdl", "cossack", "sgm", "bext", "neck"]);
+  assert.deepEqual(d[1].ids, ["rdl", "ohp", "lunge", "psoas", "lmr", "heaves", "bext", "neck"]);
   assert.equal(d[0].names[6], "Back extension (twist)");
   assert.equal(d[1].names[6], "Back extension (twist)");
 });
 
 test("EMBER Day A / Day B lists", async () => {
   const d = await days("ember");
-  assert.deepEqual(d[0].ids, ["em-squat", "em-bench", "em-row", "em-deadbug"]);
-  assert.deepEqual(d[1].ids, ["em-rdl", "em-press", "em-heaves", "em-plank"]);
+  assert.deepEqual(d[0].ids, ["em-squat", "em-bench", "em-row", "em-deadbug", "em-neck"]);
+  assert.deepEqual(d[1].ids, ["em-rdl", "em-press", "em-heaves", "em-plank", "em-neck"]);
 });
 
 test("TITAN Day A / Day B lists", async () => {
@@ -36,7 +36,7 @@ test("Back extension (twist) is a bodyweight finisher with 0 kg and no AMRAP", a
 
 test("fresh install opens ANVIL Day A and renders every lift card with no page errors", async () => {
   const ids = await app.page.$$eval("article.card", (els) => els.map((e) => e.id));
-  assert.deepEqual(ids, ["ex-squat", "ex-bench", "ex-row", "ex-xrdl", "ex-cossack", "ex-sgm", "ex-bext"]);
+  assert.deepEqual(ids, ["ex-squat", "ex-bench", "ex-row", "ex-xrdl", "ex-cossack", "ex-sgm", "ex-bext", "ex-neck"]);
   assert.deepEqual(app.errors, []);
 });
 

@@ -7,7 +7,7 @@ const ANVIL_PREVIEW = /\/(anvil-)?preview\//.test(location.pathname);
 const PREVIEW_PREFIX = "anvil-preview:";
 function K(key){ return ANVIL_PREVIEW ? PREVIEW_PREFIX + key : key; }
 const STORAGE = K("anvil_app_v3");
-const APP_VERSION = "anvil-v49";
+const APP_VERSION = "anvil-v50";
 const CUE_LOUDNESS = 2.4;
 const CUE_MAX_GAIN = 0.95;
 const SET_OPTS = [1,2,3,4,5];
@@ -71,7 +71,13 @@ function syncCossackExercise(ex){
   const stage = cossackStage(ex);
   return {...ex, name: stage.name, note: stage.note};
 }
+/** v50 Neck isometric (4-way): timed holds per direction; +5 s per clean session, capped at 20 s. */
+const NECK_IDS = new Set(["neck", "em-neck"]);
+const NECK_START = 5, NECK_STEP = 5, NECK_MAX = 20;
+const NECK_NOTE = "2 rounds: hold forward → left → back → right against your hand. Seconds per direction, not reps. Gentle push, no movement.";
+function isNeckIso(ex){ return !!ex && (!!ex.neckIso || NECK_IDS.has(ex.id)); }
 function isPlankSeconds(ex){
+  if (isNeckIso(ex)) return true;
   // Heave ladder: only Dead hang is timed — stage notes for negatives mention "seconds" of lowering, not hold time
   if (isHeaveLadder(ex)) return !!heaveStage(ex).seconds;
   return ex.id === "em-plank" || ex.id === "tp-plank" || /seconds/i.test(ex.note||"");
@@ -209,7 +215,7 @@ function normalizeWaveTargets(){
   });
   for (const [id, p] of Object.entries(progress)) {
     if (!p || typeof p !== "object" || p.reps == null) continue;
-    if (id === "em-plank" || id === "em-heaves" || id === "tp-plank" || id === "tp-heaves" || /seconds/i.test(p.note||"")) continue;
+    if (id === "em-plank" || id === "em-heaves" || id === "tp-plank" || id === "tp-heaves" || NECK_IDS.has(id) || /seconds/i.test(p.note||"")) continue;
     if (WAVE_REPS.includes(p.reps)) continue;
     progress[id] = {...p, reps: snapWaveRep(p.reps)};
     changed = true;
@@ -238,6 +244,7 @@ const PROGRAMS = [
       }),
       bb("sgm","Seated good morning",3,8,90,"Day A",{cap:12,note:"Bar on upper back, sit tall, hinge from the hips. Soft knees."}),
       bw("bext","Back extension (twist)",3,10,60,"Day A",{finisher:true,note:"Rise, rotate to one side at the top, alternate sides each rep; slow, pause at top. Bodyweight, no kg."}),
+      bw("neck","Neck isometric (4-way)",2,NECK_START,30,"Day A",{finisher:true,neckIso:true,note:NECK_NOTE}),
     ]},
     {label:"B", exercises:[
       bb("rdl","RDL",3,8,120,"Day B"),
@@ -247,6 +254,7 @@ const PROGRAMS = [
       bw("lmr","Landmine rotation",3,8,60,"Day B",{cap:12,bilateral:true}),
       bw("heaves","Heaves",3,6,120,"Day B",{nocap:true,note:"Pull-ups or chin-ups. Clean reps; assist if needed."}),
       bw("bext","Back extension (twist)",3,10,60,"Day B",{finisher:true,note:"Rise, rotate to one side at the top, alternate sides each rep; slow, pause at top. Bodyweight, no kg."}),
+      bw("neck","Neck isometric (4-way)",2,NECK_START,30,"Day B",{finisher:true,neckIso:true,note:NECK_NOTE}),
     ]},
   ]},
   {id:"titan", name:"TITAN PROTOCOL", blurb:"Marcus · junior ANVIL. A/B wave 6→8→10→12. Plate bench → bar at 10kg×12.", days:[
@@ -276,6 +284,7 @@ const PROGRAMS = [
       bb("em-bench","Bench Press",3,6,90,"Day A",{weight:20,cap:10,note:"Empty bar first if needed. Feet planted, lower to chest, press up."}),
       bb("em-row","Bent over row",3,6,60,"Day A",{weight:2.5,cap:14,note:"2.5 kg plates. Hinge, pull to ribs, lower slow."}),
       bw("em-deadbug","Dead bug",3,6,45,"Day A",{bilateral:true,cap:12,note:"Lower back glued to the floor. Opposite arm and leg."}),
+      bw("em-neck","Neck isometric (4-way)",2,NECK_START,30,"Day A",{finisher:true,neckIso:true,note:NECK_NOTE}),
     ]},
     {label:"B", exercises:[
       bb("em-rdl","Plate RDL",3,6,75,"Day B",{weight:2.5,cap:12,note:"2.5 kg plates in both hands. Soft knees, hips back, flat back."}),
@@ -285,6 +294,7 @@ const PROGRAMS = [
         note: HEAVE_STAGES[0].note
       }),
       bw("em-plank","Plank",3,20,45,"Day B",{cap:45,note:"Seconds, not reps. Knees down if needed."}),
+      bw("em-neck","Neck isometric (4-way)",2,NECK_START,30,"Day B",{finisher:true,neckIso:true,note:NECK_NOTE}),
     ]},
   ]},
   {id:"five-by-five", name:"5×5", blurb:"StrongLifts-style. Alternate A / B, add 2.5 kg when all 5s are clean.", days:[
@@ -347,6 +357,7 @@ const LIBRARY = [
     bb("calf","Calf raise",3,12,45,"Add-on",{cap:20}),
   ]},
   {group:"Core / extras", lifts:[
+    bw("neck","Neck isometric (4-way)",2,NECK_START,30,"Add-on",{neckIso:true,note:NECK_NOTE}),
     bw("plank","Plank",3,30,45,"Add-on",{cap:60,note:"Seconds, not reps"}),
     bw("dead-bug","Dead bug",3,10,45,"Add-on",{bilateral:true,cap:16}),
     bw("situp","Sit-ups",3,12,45,"Add-on",{nocap:true}),
@@ -471,7 +482,7 @@ function hydrate(raw){
     next.push({
       id:e.id, name:e.name, sets, rest:e.rest??90, weight:e.weight??0, reps:e.reps??8,
       bw:e.bw, nocap:e.nocap, cap:e.cap, block:e.block??"Session", bilateral:e.bilateral, note:e.note, finisher:e.finisher,
-      heaveLadder:e.heaveLadder, benchLadder:e.benchLadder, cossackLadder:e.cossackLadder, levels:e.levels, levelIndex: e.levels?.length ? (e.levelIndex??0) : e.levelIndex,
+      neckIso:e.neckIso, heaveLadder:e.heaveLadder, benchLadder:e.benchLadder, cossackLadder:e.cossackLadder, levels:e.levels, levelIndex: e.levels?.length ? (e.levelIndex??0) : e.levelIndex,
       streak:e.streak??0, failStreak:e.failStreak??0, skipped:e.skipped??false,
       ...(e.skipped && skipReasonId(e.skipReason) ? { skipReason: e.skipReason, ...(cleanSkipNote(e.skipNote) ? { skipNote: cleanSkipNote(e.skipNote) } : {}) } : {}),
       setsLog: e.setsLog && e.setsLog.length===sets ? e.setsLog : blankSets(sets),
@@ -539,10 +550,12 @@ function scheduleJumpToNextIncomplete(){
 }
 function fmtTime(sec){ const s=Math.max(0,Math.floor(sec)); return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`; }
 function targetLabel(ex){
+  if (isNeckIso(ex)) return `${ex.sets} × 4-way · ${ex.reps}s each`;
   const unit = isPlankSeconds(ex) ? "s" : "";
   return ex.bilateral ? `${ex.sets} × ${ex.reps}${unit} each` : `${ex.sets} × ${ex.reps}${unit}`;
 }
 function maxRep(ex){
+  if (isNeckIso(ex)) return Math.max(ex.reps || 0, 60);
   if (ex.nocap) return 50;
   if (ex.cap) return ex.cap;
   return Math.max(ex.reps || 0, 20);

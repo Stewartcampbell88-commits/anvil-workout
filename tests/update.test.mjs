@@ -32,7 +32,10 @@ test(`update from live (${LIVE_REV}) keeps every saved byte that matters`, async
   assert.deepEqual(after.history, before.history);
   assert.deepEqual(after.liftProgress, before.liftProgress);
   assert.deepEqual(after.bodyWeightLog, before.bodyWeightLog);
-  assert.deepEqual(after.exercises.map((e) => e.setsLog), before.exercises.map((e) => e.setsLog), "in-progress sets survive the update");
+  // v50 appends Neck isometric (4-way) to the saved day; every lift that was there keeps its sets
+  const afterOld = after.exercises.filter((e) => e.id !== "neck" || before.exercises.some((b) => b.id === "neck"));
+  assert.deepEqual(afterOld.map((e) => e.setsLog), before.exercises.map((e) => e.setsLog), "in-progress sets survive the update");
+  if (!before.exercises.some((e) => e.id === "neck")) assert.ok(after.exercises.some((e) => e.id === "neck"), "neck extra added on update");
   assert.deepEqual([after.programId, after.dayIndex, after.soundVolume, after.cuePack], [before.programId, before.dayIndex, before.soundVolume, before.cuePack]);
   assert.deepEqual(await p.evaluate((ks) => ks.map((k) => localStorage.getItem(k)), [KEYS.WALKS, KEYS.SYNC, KEYS.TOKENS]).then((v) => [v[0], JSON.parse(v[1]).name, v[2]]), [beforeOther[0], "Stewart", beforeOther[2]]);
   assert.deepEqual(JSON.parse((await ls(p, "anvil_app_v3_snap")).state).history, before.history, "pre-update snapshot taken");

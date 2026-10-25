@@ -64,7 +64,7 @@ test("service worker installs, precaches, and the app opens offline", async () =
   await app.page.setOfflineMode(true);
   await app.page.reload({ waitUntil: "load" });
   await app.page.waitForFunction(() => !!document.querySelector("#app header"), { timeout: 10000 });
-  assert.equal(await app.page.$$eval("article.card", (e) => e.length), 7);
+  assert.equal(await app.page.$$eval("article.card", (e) => e.length), 8);
   assert.deepEqual(app.errors, []);
   await app.close();
 });

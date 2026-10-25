@@ -258,6 +258,10 @@ const HT_ANIMS = {
   curl: { props:[{k:"db",at:"wri"}], poses:[
     {hip:[118,102], t:0, F:[120,158], H:["n",3,41], ep:"b"},
     {hip:[118,102], t:-2, F:[120,158], H:["n",12,4], ep:"d"} ], dur:900 },
+  neckiso: { seq:[0,1,2,1], poses:[
+    {hip:[118,102], t:0, F:[120,158], H:["n",9,-13], ep:"d"},
+    {hip:[118,102], t:0, F:[120,158], H:["n",1,-19], ep:"d"},
+    {hip:[118,102], t:0, F:[120,158], H:["n",-8,-13], ep:"b"} ], dur:700, hold:900 },
   bss: { props:[{k:"bench",x:44,y:110,w:40}], poses:[
     {hip:[112,99], t:6, F:[132,158], B:[66,104], fb:-120, kp2:"d"},
     {hip:[103,124], t:14, F:[132,158], B:[66,104], fb:-120, kp2:"d"} ], dur:1100 },
@@ -363,6 +367,10 @@ const HOWTO = {
     cues:["Hips on the pad edge, feet locked in","Lower slowly by hinging at the hips","Rise to a straight line — not past it","Twist: rotate your chest to one side at the top, alternate sides"],
     mistakes:["Over-arching at the top","Swinging for momentum","Twisting before you reach the top"],
     easier:["No twist, smaller range","Floor superman or bird dog"], harder:["2 s pause at the top","Hold a light plate at the chest"] },
+  neck: { anim:"neckiso",
+    cues:["Sit or stand tall, shoulders down and relaxed","Chin neutral — level, not tucked or poking out","Forward: palm on your forehead; side: palm on the side of your head; rear: hands on the back of your head","Push your head gently into your hand and match it — no movement","Breathe the whole hold; about 50–70% effort","Round = forward → left → back → right, hold each for the target seconds","Stop if you feel pain, dizziness, or tingling"],
+    mistakes:["Pushing hard or jerking into the hand","Holding your breath","Head moving / chin poking forward","Shrugging the shoulders up"],
+    easier:["Lighter push (about 30–50%)","Shorter hold — stay at 5 s"], harder:["Slightly firmer push (stay under ~70%)","Add 5 s per direction (max 20 s)"] },
   rdl: { anim:"rdl",
     cues:["Bar close to the legs the whole way","Soft knees, push hips back","Lower until the hamstrings stretch, back flat","Drive hips forward to stand"],
     mistakes:["Squatting it down (too much knee)","Bar drifting away from the legs","Rounding the back"],
@@ -509,7 +517,7 @@ const HOWTO_ALIAS = {
   "em-squat":"squat","tp-squat":"squat","em-bench":"bench","tp-bench":"bench","em-row":"row","tp-row":"row",
   "em-rdl":"rdl","tp-rdl":"rdl","em-press":"ohp","tp-press":"ohp","tp-lunge":"reverse-lunge","split-squat":"lunge",
   "em-heaves":"heaves","tp-heaves":"heaves","em-plank":"plank","tp-plank":"plank",
-  "em-deadbug":"dead-bug","tp-deadbug":"dead-bug","single-rdl":"slrdl",
+  "em-deadbug":"dead-bug","em-neck":"neck","tp-deadbug":"dead-bug","single-rdl":"slrdl",
 };
 const HOWTO_ANIM_OVERRIDE = { "em-rdl":"rdlplates","tp-rdl":"rdlplates","em-press":"ohpplates","tp-press":"ohpplates","em-row":"rowplates","tp-row":"rowplates" };
 const HOWTO_LADDERS = {
