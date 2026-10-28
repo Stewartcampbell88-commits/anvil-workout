@@ -154,6 +154,11 @@ function cueCountdown(n){
   }
 }
 
+/** Switch sides: two quick rising notes (distinct from the rest countdown ticks). */
+function cueSwitch(){
+  playTone({ freq: 660, dur: 0.12, type: "triangle", gain: 0.3 });
+  playTone({ freq: 880, dur: 0.16, type: "triangle", gain: 0.3, when: 0.15 });
+}
 function cueComplete(){
   const pack = getCuePack();
   if (pack.kind === "voice") {

@@ -528,13 +528,14 @@ function restTick(){
   if ((r===3||r===2||r===1) && lastCue !== r) { lastCue = r; cueCountdown(r); if (navigator.vibrate) navigator.vibrate(80); }
   if (r !== remainVal) { remainVal = r; ui.remain = r; renderTimerOnly(); }
 }
-function startRest(sec){
+function startRest(sec, mode){
   clearTick(); lastCue = -1; ui.isGo = false; remainVal = sec; ui.remain = sec; ui.running = true;
+  ui.restMode = mode === "switch" ? "switch" : "rest";
   restEndAt = Date.now() + sec * 1000;
   render();
   tick = setInterval(restTick, 250);
 }
-function stopRest(){ clearTick(); restEndAt = 0; ui.running=false; ui.remain=0; remainVal=0; ui.isGo=false; }
+function stopRest(){ clearTick(); restEndAt = 0; ui.running=false; ui.remain=0; remainVal=0; ui.isGo=false; ui.restMode="rest"; }
 function adjustRest(d){
   if (ui.running && tick && restEndAt) {
     const next = Math.max(5, restLeft() + d);
@@ -566,10 +567,25 @@ function bumpSetReps(ei, si, delta){
   });
   save(); render();
 }
+/** v52: first tap on a single-side set = side 1 done (set stays open, marked half). No pass/fail, no progression. */
+function markHalf(ei, si){
+  clockNoteSet();
+  state.exercises = state.exercises.map((ex,i) => i!==ei ? ex : {...ex, skipped:false, setsLog: ex.setsLog.map((s,j) => j===si ? {...s, half:true} : s)});
+  save(); render();
+}
 function onMark(ei, si){
   unlockAudio();
-  const before = state.exercises[ei].setsLog[si];
+  const ex0 = state.exercises[ei];
+  const before = ex0.setsLog[si];
   const starting = !before.ok && !before.miss;
+  const sw = switchSecFor(ex0);
+  if (starting && !before.half && sw > 0 && !ex0.skipped) {
+    markHalf(ei, si);
+    startRest(sw, "switch");
+    cueSwitch();
+    if (navigator.vibrate) navigator.vibrate([120,60,120]);
+    return;
+  }
   const justFinished = markSet(ei, si);
   if (starting) startRest(state.exercises[ei].rest);
   if (justFinished) scheduleJumpToNextIncomplete();
@@ -577,7 +593,7 @@ function onMark(ei, si){
 function onLog(){
   const startedOpen = state.exercises.some(ex => {
     if (ex.skipped) return false;
-    const touched = ex.setsLog.some(s => s.ok || s.miss);
+    const touched = ex.setsLog.some(s => s.ok || s.miss || s.half);
     if (!touched) return false;
     return !ex.setsLog.every(s => s.ok || s.miss);
   });
@@ -661,6 +677,7 @@ function editKind(ex){
     kgStep: !timed && !ex.finisher,   // finishers never add kg
     range: !timed,
     names: !isStageLadder(ex),        // ladder names/notes follow the stage
+    switch: !!ex.bilateral,           // "each side" lifts get the switch-sides timer
   };
 }
 /** Built-in (unedited) rep range for a lift: wave rungs 6–12, or the old double-progression cap. */
@@ -676,7 +693,7 @@ function editDraftFrom(ex, ei){
     ei, id: ex.id, name: ex.name, note: ex.note || "", sets: ex.sets, reps: ex.reps, repsPick: ex.reps, rest: ex.rest,
     weight: Number(ex.weight) || 0, kgStep: kgStepFor(ex),
     repLow: ex.repLow ?? (k.wave ? waveRepsFor(ex)[0] : bl), repTop: ex.repTop ?? (k.wave ? waveRepsFor(ex).slice(-1)[0] : bt),
-    secStep: neckStepFor(ex), secMax: neckMaxFor(ex), msg: "",
+    secStep: neckStepFor(ex), secMax: neckMaxFor(ex), switchSec: switchSecFor(ex), msg: "",
   };
 }
 function openExerciseEdit(ei){
@@ -700,6 +717,7 @@ function editStep(field, dir){
   else if (field === "repLow") { d.repLow = clamp(d.repLow + dir, 1, 50); if (d.repTop < d.repLow) d.repTop = d.repLow; }
   else if (field === "repTop") d.repTop = clamp(d.repTop + dir, d.repLow, 60);
   else if (field === "secStep") d.secStep = clamp(d.secStep + dir, 1, 30);
+  else if (field === "switchSec") d.switchSec = clamp(Math.round((d.switchSec + dir * 5) / 5) * 5, 0, 60);
   else if (field === "secMax") d.secMax = clamp(d.secMax + dir * 5, Math.max(NECK_START, 5), 300);
   else if (field === "reps") {
     if (k.neck) d.reps = clamp(d.reps + dir, NECK_START, d.secMax);
@@ -759,6 +777,7 @@ function saveExerciseEdit(){
   if (k.names && String(d.note || "").trim() !== String(def.note || "")) edit.note = String(d.note || "").trim().slice(0, EDIT_NOTE_MAX);
   if (k.neck && d.secStep !== NECK_STEP) edit.secStep = d.secStep;
   if (k.neck && d.secMax !== NECK_MAX) edit.secMax = d.secMax;
+  if (k.switch && d.switchSec !== SWITCH_DEFAULT) edit.switchSec = d.switchSec;
   const all = sanitizeEdits(state.exerciseEdits);
   const clean = sanitizeEdit(edit);
   if (clean) (all[pid] ||= {})[ex.id] = clean;

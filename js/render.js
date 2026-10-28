@@ -15,7 +15,8 @@ function renderTimerOnly(){
     el.textContent = (ui.remain>0 && ui.remain<=3 && !ui.isGo) ? String(ui.remain) : (ui.isGo ? "GO" : "");
   });
   const bar = document.getElementById("timer-bar-label");
-  if (bar) bar.textContent = (ui.running || ui.remain>0) ? `Rest · ${active?.name??""}` : (active?.name??"");
+  if (bar) bar.textContent = (ui.running || ui.remain>0) ? `${ui.restMode==="switch"?"Switch sides":"Rest"} · ${active?.name??""}` : (active?.name??"");
+  document.querySelectorAll("[data-switch-lab]").forEach(el => { el.textContent = ui.restMode==="switch" ? (ui.isGo ? "Side 2 — go" : "Switch sides") : ""; });
 }
 
 function exNameHtml(ex, ei){ return `<span class="ex-name" data-act="howto" data-i="${ei}" role="button" tabindex="0" aria-label="How to do ${esc(ex.name)}">${esc(ex.name)}<i class="ex-info" aria-hidden="true">i</i></span>`; }
@@ -86,11 +87,12 @@ function render(){
     const amrap = usesAmrap(ex);
     const sets = ex.skipped ? "" : `<div class="sets${tight?" tight":""}">${ex.setsLog.map((log,si) => {
       const shown = log.reps ?? ex.reps;
-      const cls = log.ok ? "ok" : log.miss ? "miss" : "";
+      const cls = log.ok ? "ok" : log.miss ? "miss" : log.half ? "half" : "";
       const hit = isNeckIso(ex) ? `${shown}s` : ex.bilateral ? `${shown} ea` : String(shown);
       const isLast = si === ex.setsLog.length - 1;
-      const setLab = (isLast && amrap) ? "AMRAP" : String(si+1);
-      const setAria = (isLast && amrap) ? "AMRAP last set" : ("Set " + (si+1));
+      const half = !log.ok && !log.miss && log.half;
+      const setLab = half ? "Side 2" : (isLast && amrap) ? "AMRAP" : String(si+1);
+      const setAria = (half ? "Side 1 done, tap after side 2. " : "") + ((isLast && amrap) ? "AMRAP last set" : ("Set " + (si+1)));
       return `<div class="set ${cls}">
         <button type="button" class="set-hit" data-act="set" data-i="${ei}" data-s="${si}" aria-label="${setAria}">
           <span class="set-label">${setLab}</span>${hit}
@@ -121,7 +123,7 @@ function render(){
           <p class="meta">${esc(targetLabel(ex))}<br>${isNeckIso(ex) ? (ex.reps >= neckMaxFor(ex) ? `Max ${neckMaxFor(ex)}s · ${ex.failStreak}/3 no-rep` : `+${neckStepFor(ex)}s next clean · max ${neckMaxFor(ex)}s`) : `${ex.streak}/3 clean · ${ex.failStreak}/3 no-rep`}${amrap?`<br><span style="opacity:.7;font-size:.65rem">Last set AMRAP · +2 → +${fmtStep(kgStepFor(ex))} kg</span>`:""}</p>
         </div>
         <div class="weight">${load}</div>
-        ${isActive?`<div class="rest-box"><p class="cue" data-cue>${loggedCue}</p><p class="big ${tClass}" data-timer style="font-size:3rem">${remainText}</p>
+        ${isActive?`<div class="rest-box${ui.restMode==="switch"?" switching":""}"><p class="switch-lab" data-switch-lab>${ui.restMode==="switch" ? (ui.isGo ? "Side 2 — go" : "Switch sides") : ""}</p><p class="cue" data-cue>${loggedCue}</p><p class="big ${tClass}" data-timer style="font-size:3rem">${remainText}</p>
           <div class="split" style="justify-content:center;margin-top:.625rem"><button class="icon-btn" data-act="rest" data-d="-15" aria-label="Minus 15 seconds">−</button>
           <button class="icon-btn" data-act="rest" data-d="15" aria-label="Plus 15 seconds">+</button></div></div>`:""}
         ${sets}
@@ -386,7 +388,7 @@ ${restorePinField(".5rem")}
 
   const workoutBody = `
     ${days}
-    ${timerOn?`<div class="timer-bar"><div><p class="note" id="timer-bar-label" style="margin:0">${esc((ui.running||ui.remain>0)?`Rest · ${active?.name??""}`:(active?.name??""))}</p>
+    ${timerOn?`<div class="timer-bar"><div><p class="note" id="timer-bar-label" style="margin:0">${esc((ui.running||ui.remain>0)?`${ui.restMode==="switch"?"Switch sides":"Rest"} · ${active?.name??""}`:(active?.name??""))}</p>
       <p class="big ${timeClass}" data-timer style="font-size:1.875rem">${timeText}</p></div>
       <div style="display:flex;gap:.375rem"><button class="icon-btn" data-act="rest" data-d="-15">−</button>
       <button class="icon-btn" data-act="rest" data-d="15">+</button></div></div>`:""}
@@ -404,7 +406,7 @@ ${restorePinField(".5rem")}
       <button class="primary" id="log-session" data-act="log">Log session</button>
       <button data-act="reset">${I.reset} Reset</button>
     </div>
-    <p class="foot">Tap the big number to complete that set (tap again clears). − / + dial that set’s reps — going below the target marks it failed (red). Leave a lift blank or skip — it won’t count. Weight − can go negative (assist kg; less assist = progress). Last set AMRAP on most lifts — hit target+2 (or more) to add 2.5kg next time. Timed holds and early heave stages skip AMRAP. Ember / Anvil / Titan: 3 clean at a rung climbs 6→8→10→12, then 3×6 +2.5kg (plank waves 20→30→20s, no kg) — AMRAP load bump skips the wave climb that session. Heaves ladder: hang → feet assist → negatives → full (auto-graduate after wave). ANVIL Cossack ladder: supported → short → full depth → goblet (auto-graduate after wave; kg on final). Titan plate bench: 3 clean at 3×12 @ ≥10kg → barbell 3×6 @ 20kg (AMRAP at 12 @ ≥10kg also graduates). Other programs: 3 clean → +2 reps (or +2.5 kg at cap). 3 short sessions → reset week (drop kg first if loaded).</p>`;
+    <p class="foot">Tap the big number to complete that set (tap again clears). “Each side” lifts: first tap = side 1 done → short Switch sides countdown; tap again after side 2 to log the set (switch time in ✏️ Edit, 0 = off). − / + dial that set’s reps — going below the target marks it failed (red). Leave a lift blank or skip — it won’t count. Weight − can go negative (assist kg; less assist = progress). Last set AMRAP on most lifts — hit target+2 (or more) to add 2.5kg next time. Timed holds and early heave stages skip AMRAP. Ember / Anvil / Titan: 3 clean at a rung climbs 6→8→10→12, then 3×6 +2.5kg (plank waves 20→30→20s, no kg) — AMRAP load bump skips the wave climb that session. Heaves ladder: hang → feet assist → negatives → full (auto-graduate after wave). ANVIL Cossack ladder: supported → short → full depth → goblet (auto-graduate after wave; kg on final). Titan plate bench: 3 clean at 3×12 @ ≥10kg → barbell 3×6 @ 20kg (AMRAP at 12 @ ≥10kg also graduates). Other programs: 3 clean → +2 reps (or +2.5 kg at cap). 3 short sessions → reset week (drop kg first if loaded).</p>`;
 
   const wsec = clockElapsedSec();
   const wclock = wsec == null ? "" : ` · <span data-wclock aria-label="Workout time">${fmtClock(wsec)}</span>`;
@@ -514,6 +516,8 @@ function renderEditSheet(d, ex){
         : `+2 reps after 3 clean sessions up to ${d.repTop}, then +${fmtStep(d.kgStep)} kg and back to ${d.repLow}.`}</p>`;
   }
   body += sec("Rest") + stepper("rest", "Rest between sets", restTxt, "15 s steps");
+  if (k.switch) body += stepper("switchSec", "Switch sides timer", d.switchSec ? `${d.switchSec}s` : "Off", "after side 1 · 0 = off")
+    + `<p class="edit-hint">Tap the set after side 1 → short countdown + cue to switch. Tap again after side 2 → set logged, normal rest.</p>`;
   if (k.names) {
     body += sec("Name and cues") + `<label class="edit-field">Name<input data-edit-name type="text" maxlength="${EDIT_NAME_MAX}" value="${esc(d.name)}" autocomplete="off" enterkeyhint="done"></label>
       <label class="edit-field">Notes / cues<textarea data-edit-note rows="3" maxlength="${EDIT_NOTE_MAX}" placeholder="e.g. Brace, slow down">${esc(d.note)}</textarea></label>

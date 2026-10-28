@@ -7,7 +7,7 @@ const ANVIL_PREVIEW = /\/(anvil-)?preview\//.test(location.pathname);
 const PREVIEW_PREFIX = "anvil-preview:";
 function K(key){ return ANVIL_PREVIEW ? PREVIEW_PREFIX + key : key; }
 const STORAGE = K("anvil_app_v3");
-const APP_VERSION = "anvil-v51";
+const APP_VERSION = "anvil-v52";
 const CUE_LOUDNESS = 2.4;
 const CUE_MAX_GAIN = 0.95;
 const SET_OPTS = [1,2,3,4,5];
@@ -500,8 +500,15 @@ function skipReasonText(reason, note){
  *  The lift id never changes, so a rename keeps history, progress graphs and the balance chain linked. */
 const KG_STEP_OPTS = [0.5, 1, 1.25, 2, 2.5, 5, 10];
 const EDIT_NAME_MAX = 60, EDIT_NOTE_MAX = 300;
-const EDIT_INT = { sets:[1,10], repLow:[1,50], repTop:[1,60], rest:[10,600], secStep:[1,30], secMax:[5,300] };
-const EDIT_DERIVED = ["kgStep","repLow","repTop","secStep","secMax"];
+const EDIT_INT = { sets:[1,10], repLow:[1,50], repTop:[1,60], rest:[10,600], secStep:[1,30], secMax:[5,300], switchSec:[0,60] };
+const EDIT_DERIVED = ["kgStep","repLow","repTop","secStep","secMax","switchSec"];
+/** v52 switch-sides timer: single-side ("each side" = bilateral) lifts only. Seconds between side 1 and side 2; 0 = off. */
+const SWITCH_DEFAULT = 10;
+function switchSecFor(ex){
+  if (!ex?.bilateral) return 0;
+  const n = ex.switchSec;
+  return Number.isInteger(n) && n >= 0 && n <= 60 ? n : SWITCH_DEFAULT;
+}
 function sanitizeEdit(o){
   if (!o || typeof o !== "object" || Array.isArray(o)) return null;
   const out = {};
