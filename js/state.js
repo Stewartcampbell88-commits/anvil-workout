@@ -10,6 +10,7 @@ let state = {
   soundVolume: 1.0,
   cuePack: "chime",
   loudCuesV33: true,
+  exerciseEdits: {},
 };
 let ui = { remain:0, running:false, isGo:false, panel:"none", settingsTab:"program", pending:null, pickSets:3, pickReps:8, installHint:false, installed:false, toastTimer:null, swReg:null, updateReady:false, updateChecking:false, refreshing:false, appVersion: APP_VERSION, progressLiftId:null, progressRange:"1m", bwDraftKg:null, bwLinkSession:false, pendingHolds:null, expandedEx:new Set(), mainTab:"workout" };
 let remainVal = 0, lastCue = -1, tick = null, deferredInstall = null;
@@ -69,13 +70,15 @@ function load(){
     const program = getProgram(raw.programId || "anvil");
     const dayIndex = Math.min(Math.max(0, raw.dayIndex||0), program.days.length-1);
     let liftProgress = raw.liftProgress || {};
+    const exerciseEdits = sanitizeEdits(raw.exerciseEdits);
     // Snap odd ANVIL/EMBER targets (e.g. stuck 7 → 8) in saved progress
     if (program.id === "anvil" || program.id === "ember" || program.id === "titan") {
       const snapped = {};
       for (const [id, p] of Object.entries(liftProgress)) {
         if (!p || typeof p !== "object") { snapped[id] = p; continue; }
         const skipSnap = id === "em-plank" || id === "em-heaves" || id === "tp-plank" || id === "tp-heaves" || NECK_IDS.has(id);
-        const reps = (!skipSnap && p.reps != null && !WAVE_REPS.includes(p.reps)) ? snapWaveRep(p.reps) : p.reps;
+        const rungs = waveRepsFor(editFor(program.id, id, exerciseEdits));
+        const reps = (!skipSnap && p.reps != null && !rungs.includes(p.reps)) ? snapWaveRep(p.reps, rungs) : p.reps;
         snapped[id] = reps === p.reps ? p : {...p, reps};
       }
       liftProgress = snapped;
@@ -167,13 +170,14 @@ function load(){
       programId: program.id,
       dayIndex,
       liftProgress,
-      exercises: applyProgress(baseExs, liftProgress, program.id),
+      exercises: applyProgress(baseExs, liftProgress, program.id, exerciseEdits),
       history: raw.history || [],
       bodyWeightLog: Array.isArray(raw.bodyWeightLog) ? raw.bodyWeightLog : [],
       // Preserve an explicit mute or custom preference; only promote the old default once.
       soundVolume: clampVolume(needsCueMigration && legacyCueDefault ? 1.0 : (raw.soundVolume ?? 1.0)),
       cuePack: normalizeCuePack(raw.cuePack),
       loudCuesV33: true,
+      exerciseEdits,
     };
     if (normalizeWaveTargets() || needsCueMigration || layoutChanged || xrdlChanged || neckChanged) save();
   } catch (e) {
@@ -192,6 +196,7 @@ function saveState(){
     bodyWeightLog: state.bodyWeightLog || [],
     soundVolume: clampVolume(state.soundVolume), cuePack: normalizeCuePack(state.cuePack),
     loudCuesV33: true, anvilLayoutV38: true, anvilXrdlV49: true, neckIsoV50: true,
+    exerciseEdits: sanitizeEdits(state.exerciseEdits),
   }));
 }
 
@@ -202,6 +207,7 @@ function backupPayload(){
     bodyWeightLog: state.bodyWeightLog || [],
     soundVolume: clampVolume(state.soundVolume), cuePack: normalizeCuePack(state.cuePack),
     loudCuesV33: true,
+    exerciseEdits: sanitizeEdits(state.exerciseEdits),
   };
 }
 
@@ -353,6 +359,7 @@ function applyBackup(raw){
         soundVolume: clampVolume(raw.soundVolume ?? 1.0),
         cuePack: normalizeCuePack(raw.cuePack),
         loudCuesV33: true,
+        exerciseEdits: sanitizeEdits(raw.exerciseEdits), // older backups have none → {}
       }));
       if (Array.isArray(raw.walks)) {
         walks = raw.walks.filter(w => w && typeof w.date === "string" && typeof w.durationSec === "number").slice(0, WALKS_MAX);

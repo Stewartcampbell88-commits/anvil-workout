@@ -28,6 +28,13 @@ document.getElementById("app").addEventListener("click", (e) => {
   else if (act==="skip") onSkipTap(+btn.dataset.i);
   else if (act==="skip-why") chooseSkipReason(btn.dataset.r);
   else if (act==="skip-cancel") cancelSkip();
+  else if (act==="edit-ex") openExerciseEdit(+btn.dataset.i);
+  else if (act==="edit-step") { readEditTextFields(); editStep(btn.dataset.f, +btn.dataset.d); }
+  else if (act==="edit-kg-step") { readEditTextFields(); editSetKgStep(btn.dataset.v); }
+  else if (act==="edit-reps") { readEditTextFields(); editSetReps(btn.dataset.v); }
+  else if (act==="edit-reset") resetExerciseEditDraft();
+  else if (act==="edit-save") { readEditTextFields(); saveExerciseEdit(); }
+  else if (act==="edit-cancel") cancelExerciseEdit();
   else if (act==="rest") adjustRest(+btn.dataset.d);
   else if (act==="chart-pt") showChartPoint(btn.dataset.c, +btn.dataset.i);
   else if (act==="progress-range") { if (PROGRESS_RANGES[btn.dataset.r]) { ui.progressRange = btn.dataset.r; render(); } }

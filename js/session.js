@@ -80,7 +80,7 @@ function markSet(ei, si){
   return justFinished;
 }
 function bumpWeight(ei, d){
-  state.exercises = state.exercises.map((ex,i) => i===ei ? {...ex, weight: clampKg(+(ex.weight+d).toFixed(1))} : ex);
+  state.exercises = state.exercises.map((ex,i) => i===ei ? {...ex, weight: clampKg(+(ex.weight+d).toFixed(2))} : ex);
   state.liftProgress = captureProgress(state.exercises, state.liftProgress);
   save(); render();
 }
@@ -166,7 +166,7 @@ function setDay(dayIndex){
 }
 function addExercise(def){
   if (state.exercises.some(e => e.id === def.id)) return false;
-  state.exercises = [...state.exercises, toExercise({...def, block: def.block || "Add-on"})];
+  state.exercises = [...state.exercises, applyEdits(toExercise({...def, block: def.block || "Add-on"}), state.programId, state.exerciseEdits)];
   save(); return true;
 }
 function removeExercise(id){
@@ -229,15 +229,16 @@ function logSession(){
       let reps = ex.reps;
       if (failStreak >= 3) {
         failStreak = 0;
-        reps = Math.max(NECK_START, reps - NECK_STEP);
+        reps = Math.max(NECK_START, reps - neckStepFor(ex));
         notes.push(`${ex.name}: RESET WEEK — back to ${reps}s each`);
       } else notes.push(`${ex.name}: short hold ${failStreak}/3 — stay at ${reps}s`);
       return {...ex, streak:0, failStreak, reps, weight:0, setsLog: blankSets(ex.sets)};
     }
     if (isNeckIso(ex)) {
       // Neck iso (v50): every clean session adds 5 s per direction, capped at 20 s. Outside the kg wave / balance chain.
-      const reps = Math.min(NECK_MAX, Math.max(NECK_START, (Number(ex.reps)||NECK_START) + NECK_STEP));
-      notes.push(reps > ex.reps ? `${ex.name}: hold → ${reps}s each` : `${ex.name}: max ${NECK_MAX}s each — hold there`);
+      const nMax = neckMaxFor(ex);
+      const reps = Math.min(nMax, Math.max(NECK_START, (Number(ex.reps)||NECK_START) + neckStepFor(ex)));
+      notes.push(reps > ex.reps ? `${ex.name}: hold → ${reps}s each` : `${ex.name}: max ${nMax}s each — hold there`);
       return {...ex, streak:0, failStreak:0, reps, weight:0, setsLog: blankSets(ex.sets)};
     }
     if (!clean) {
@@ -247,14 +248,14 @@ function logSession(){
         failStreak = 0;
         if (ex.bw) {
           if (weight !== 0) {
-            weight = clampKg(+(weight-2.5).toFixed(1));
+            weight = clampKg(+(weight-kgStepFor(ex)).toFixed(2));
             notes.push(`${ex.name}: RESET WEEK — ${fmtKg(weight)} kg × ${reps}`);
           } else {
             if (reps>6) reps-=2;
             notes.push(`${ex.name}: RESET WEEK — reps back to ${reps}`);
           }
         } else {
-          weight = clampKg(+(weight-2.5).toFixed(1));
+          weight = clampKg(+(weight-kgStepFor(ex)).toFixed(2));
           if (ex.cap) notes.push(`${ex.name}: RESET WEEK — ${fmtKg(weight)} kg × ${reps}`);
           else { if (reps>8) reps-=2; notes.push(`${ex.name}: RESET WEEK — ${fmtKg(weight)} kg × ${reps}`); }
         }
@@ -269,31 +270,32 @@ function logSession(){
       let streak = (ex.streak||0) + 1;
       let {reps, weight} = ex;
       let levelIndex = ex.levelIndex ?? 0;
+      const kgStep = kgStepFor(ex), rungs = waveRepsFor(ex), topRung = rungs[rungs.length - 1];
       if (amrapHit) {
         streak = 0;
         if (isBenchLadder(ex)) {
           const idx = levelIndex;
           const stage = BENCH_STAGES[Math.min(idx, BENCH_STAGES.length-1)];
           const last = idx >= BENCH_STAGES.length - 1;
-          if (!last && !stage.useBar && reps === 12 && weight >= 10) {
+          if (!last && !stage.useBar && reps >= topRung && weight >= 10) {
             levelIndex = idx + 1;
             const nextStage = BENCH_STAGES[levelIndex];
             reps = nextStage.startReps; weight = nextStage.startWeight;
             notes.push(`${ex.name}: AMRAP ${lastReps} → graduated → ${nextStage.name}`);
           } else {
-            const bumped = +(weight + 2.5).toFixed(1);
-            const r = takeKgBump(ex, bumped, reps, 0, `${ex.name}: AMRAP ${lastReps} → +2.5kg · ${bumped}kg × ${reps}`);
+            const bumped = +(weight + kgStep).toFixed(2);
+            const r = takeKgBump(ex, bumped, reps, 0, `${ex.name}: AMRAP ${lastReps} → +${fmtStep(kgStep)}kg · ${bumped}kg × ${reps}`);
             weight = r.weight; reps = r.reps; streak = r.streak;
           }
         } else {
           // Full heaves (final stage) and normal wave lifts: +2.5kg, keep reps
-          const bumped = +(weight + 2.5).toFixed(1);
-          const r = takeKgBump(ex, bumped, reps, 0, `${ex.name}: AMRAP ${lastReps} → +2.5kg · ${bumped}kg × ${reps}`);
+          const bumped = +(weight + kgStep).toFixed(2);
+          const r = takeKgBump(ex, bumped, reps, 0, `${ex.name}: AMRAP ${lastReps} → +${fmtStep(kgStep)}kg · ${bumped}kg × ${reps}`);
           weight = r.weight; reps = r.reps; streak = r.streak;
         }
       } else if (streak < 3) {
         const sec = isPlankSeconds(ex);
-        notes.push(`${ex.name}: clean streak ${streak}/3 at 3×${reps}${sec?"s":""}`);
+        notes.push(`${ex.name}: clean streak ${streak}/3 at ${ex.sets}×${reps}${sec?"s":""}`);
       } else if (isHeaveLadder(ex)) {
         const idx = levelIndex;
         const stage = HEAVE_STAGES[Math.min(idx, HEAVE_STAGES.length-1)];
@@ -303,20 +305,20 @@ function logSession(){
             reps = 30; streak = 0;
             notes.push(`${ex.name}: wave → 3×30s`);
           } else if (!last) {
-            levelIndex = idx + 1; reps = 6; weight = 0; streak = 0;
+            levelIndex = idx + 1; reps = rungs[0]; weight = 0; streak = 0;
             notes.push(`${ex.name}: graduated → ${HEAVE_STAGES[levelIndex].name}`);
           } else {
             reps = 20; streak = 0;
             notes.push(`${ex.name}: wave → 3×20s`);
           }
         } else {
-          const atGraduatePoint = WAVE_REPS.indexOf(reps) === WAVE_REPS.length - 1;
+          const atGraduatePoint = reps >= topRung;
           if (atGraduatePoint && !last) {
-            levelIndex = idx + 1; reps = 6; weight = 0; streak = 0;
+            levelIndex = idx + 1; reps = rungs[0]; weight = 0; streak = 0;
             notes.push(`${ex.name}: graduated → ${HEAVE_STAGES[levelIndex].name}`);
           } else {
             // Heave ladder kg bumps are skipped from the balance chain (BW / no clear ceiling)
-            const step = nextWaveStep(reps, weight);
+            const step = nextWaveStep(reps, weight, ex);
             reps = step.reps; weight = step.weight; streak = 0;
             notes.push(`${ex.name}: ${step.note}`);
           }
@@ -324,14 +326,14 @@ function logSession(){
       } else if (isCossackLadder(ex)) {
         const idx = levelIndex;
         const last = idx >= COSSACK_STAGES.length - 1;
-        const atGraduatePoint = WAVE_REPS.indexOf(reps) === WAVE_REPS.length - 1;
+        const atGraduatePoint = reps >= topRung;
         if (atGraduatePoint && !last) {
           levelIndex = idx + 1;
           const nextStage = COSSACK_STAGES[levelIndex];
           reps = nextStage.startReps; weight = nextStage.startWeight ?? 0; streak = 0;
           notes.push(`${ex.name}: graduated → ${nextStage.name}`);
         } else {
-          const step = nextWaveStep(reps, weight);
+          const step = nextWaveStep(reps, weight, ex);
           if (step.weight > weight) {
             const r = takeKgBump(ex, step.weight, step.reps, 0, `${ex.name}: ${step.note}`);
             weight = r.weight; reps = r.reps; streak = r.streak;
@@ -344,7 +346,7 @@ function logSession(){
         const idx = levelIndex;
         const stage = BENCH_STAGES[Math.min(idx, BENCH_STAGES.length-1)];
         const last = idx >= BENCH_STAGES.length - 1;
-        const atTopWave = WAVE_REPS.indexOf(reps) === WAVE_REPS.length - 1;
+        const atTopWave = reps >= topRung;
         // 3 clean at 3×12 with plate weight ≥ 10 kg → Bench Press 3×6 @ 20 kg
         if (!last && !stage.useBar && atTopWave && weight >= 10) {
           levelIndex = idx + 1;
@@ -352,7 +354,7 @@ function logSession(){
           reps = nextStage.startReps; weight = nextStage.startWeight; streak = 0;
           notes.push(`${ex.name}: graduated → ${nextStage.name}`);
         } else {
-          const step = nextWaveStep(reps, weight);
+          const step = nextWaveStep(reps, weight, ex);
           if (step.weight > weight) {
             const r = takeKgBump(ex, step.weight, step.reps, 0, `${ex.name}: ${step.note}`);
             weight = r.weight; reps = r.reps; streak = r.streak;
@@ -370,12 +372,12 @@ function logSession(){
           notes.push(`${ex.name}: wave → 3×20s (no kg)`);
         }
       } else if (ex.finisher) {
-        const step = nextWaveStep(reps, weight);
+        const step = nextWaveStep(reps, weight, ex);
         streak = 0;
-        if (step.weight > weight) notes.push(`${ex.name}: finisher — hold 3×${reps}, no kg`);
+        if (step.weight > weight) notes.push(`${ex.name}: finisher — hold ${ex.sets}×${reps}, no kg`);
         else { reps = step.reps; notes.push(`${ex.name}: ${step.note}`); }
       } else {
-        const step = nextWaveStep(reps, weight);
+        const step = nextWaveStep(reps, weight, ex);
         if (step.weight > weight) {
           const r = takeKgBump(ex, step.weight, step.reps, 0, `${ex.name}: ${step.note}`);
           weight = r.weight; reps = r.reps; streak = r.streak;
@@ -392,10 +394,13 @@ function logSession(){
     }
     let {reps, weight} = ex;
     let levelIndex = ex.levelIndex ?? 0;
+    const kgStep = kgStepFor(ex), sKg = fmtStep(kgStep);
+    // Edited rep range (v51): top replaces the built-in cap / 12, low is where reps restart after a kg bump
+    const capTop = ex.repTop ?? ex.cap, restartReps = ex.repLow ?? 8;
     if (amrapHit) {
       if (weight > 0 || !ex.bw) {
-        const bumped = +(weight + 2.5).toFixed(1);
-        const r = takeKgBump(ex, bumped, reps, 0, `${ex.name}: AMRAP ${lastReps} → +2.5kg · ${bumped}kg × ${reps}`);
+        const bumped = +(weight + kgStep).toFixed(2);
+        const r = takeKgBump(ex, bumped, reps, 0, `${ex.name}: AMRAP ${lastReps} → +${sKg}kg · ${bumped}kg × ${reps}`);
         weight = r.weight; reps = r.reps;
         return {...ex, streak:r.streak, failStreak:0, reps, weight, levelIndex, setsLog: blankSets(ex.sets)};
       } else {
@@ -419,19 +424,19 @@ function logSession(){
         if (!last && reps >= (ex.cap||10)) { levelIndex += 1; reps = 5; notes.push(`${ex.name}: ${ex.levels[levelIndex]} · start at ${reps}`); }
         else { reps += 2; notes.push(`${ex.name}: reps → ${reps} · ${ex.levels[levelIndex]}`); }
       } else if (ex.bw) {
-        if (ex.nocap || reps < (ex.cap||16)) { reps += 2; notes.push(`${ex.name}: reps → ${reps}`); }
+        if ((ex.nocap && ex.repTop == null) || reps < (capTop||16)) { reps += 2; notes.push(`${ex.name}: reps → ${reps}`); }
         else {
-          const bumped = +(weight+2.5).toFixed(1);
-          const r = takeKgBump(ex, bumped, reps, 3, `${ex.name}: +2.5kg → ${bumped}`);
+          const bumped = +(weight+kgStep).toFixed(2);
+          const r = takeKgBump(ex, bumped, reps, 3, `${ex.name}: +${sKg}kg → ${bumped}`);
           weight = r.weight; reps = r.reps; streak = r.held ? 3 : 0;
         }
-      } else if (ex.cap && reps >= ex.cap) {
-        const bumped = +(weight+2.5).toFixed(1);
-        const r = takeKgBump(ex, bumped, reps, 3, `${ex.name}: +2.5kg → ${bumped}`);
+      } else if (capTop && reps >= capTop && ex.repTop == null) {
+        const bumped = +(weight+kgStep).toFixed(2);
+        const r = takeKgBump(ex, bumped, reps, 3, `${ex.name}: +${sKg}kg → ${bumped}`);
         weight = r.weight; reps = r.reps; streak = r.held ? 3 : 0;
-      } else if (reps >= 12) {
-        const bumped = +(weight+2.5).toFixed(1);
-        const r = takeKgBump(ex, bumped, 8, 3, `${ex.name}: +2.5kg → ${bumped}, reps 8`);
+      } else if (reps >= (ex.repTop ?? 12)) {
+        const bumped = +(weight+kgStep).toFixed(2);
+        const r = takeKgBump(ex, bumped, restartReps, 3, `${ex.name}: +${sKg}kg → ${bumped}, reps ${restartReps}`);
         weight = r.weight; reps = r.reps; streak = r.held ? 3 : 0;
       }
       else { reps += 2; notes.push(`${ex.name}: reps → ${reps}`); }
@@ -642,4 +647,139 @@ function skipBodyWeight(){
   ui.panel = "settings";
   ui.settingsTab = "progress";
   render();
+}
+
+// ---- v51 Edit an exercise (pencil on each card + in the Remove list) ----
+/** What the Edit sheet shows for this lift. */
+function editKind(ex){
+  const timed = isPlankSeconds(ex), neck = isNeckIso(ex);
+  return {
+    neck, timed,
+    ladder: isStageLadder(ex),
+    wave: isWaveProgram(state.programId, ex) && !timed,
+    kg: !timed,                       // working kg (BW lifts too — negative = assisted)
+    kgStep: !timed && !ex.finisher,   // finishers never add kg
+    range: !timed,
+    names: !isStageLadder(ex),        // ladder names/notes follow the stage
+  };
+}
+/** Built-in (unedited) rep range for a lift: wave rungs 6–12, or the old double-progression cap. */
+function baseRange(ex){
+  const plain = applyEdits(ex, state.programId, {});
+  if (isWaveProgram(state.programId, plain)) { const r = waveRepsFor(plain); return [r[0], r[r.length - 1]]; }
+  const top = plain.cap || 12;
+  return [Math.min(plain.reps || 8, 8, top), top];
+}
+function editDraftFrom(ex, ei){
+  const k = editKind(ex), [bl, bt] = baseRange(ex);
+  return {
+    ei, id: ex.id, name: ex.name, note: ex.note || "", sets: ex.sets, reps: ex.reps, repsPick: ex.reps, rest: ex.rest,
+    weight: Number(ex.weight) || 0, kgStep: kgStepFor(ex),
+    repLow: ex.repLow ?? (k.wave ? waveRepsFor(ex)[0] : bl), repTop: ex.repTop ?? (k.wave ? waveRepsFor(ex).slice(-1)[0] : bt),
+    secStep: neckStepFor(ex), secMax: neckMaxFor(ex), msg: "",
+  };
+}
+function openExerciseEdit(ei){
+  const ex = state.exercises[ei];
+  if (!ex) return;
+  ui.editEx = editDraftFrom(ex, ei);
+  ui.panel = "edit-ex";
+  render();
+}
+function cancelExerciseEdit(){ ui.editEx = null; ui.panel = "none"; render(); }
+function draftRungs(d){ return waveRepsFor({repLow: d.repLow, repTop: d.repTop}); }
+function editStep(field, dir){
+  const d = ui.editEx; if (!d) return;
+  const ex = state.exercises[d.ei]; if (!ex) return;
+  const k = editKind(ex);
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  d.msg = "";
+  if (field === "sets") d.sets = clamp(d.sets + dir, 1, 10);
+  else if (field === "rest") d.rest = clamp(Math.round((d.rest + dir * 15) / 15) * 15, 15, 600);
+  else if (field === "weight") d.weight = clamp(+(d.weight + dir * d.kgStep).toFixed(2), KG_FLOOR, 500);
+  else if (field === "repLow") { d.repLow = clamp(d.repLow + dir, 1, 50); if (d.repTop < d.repLow) d.repTop = d.repLow; }
+  else if (field === "repTop") d.repTop = clamp(d.repTop + dir, d.repLow, 60);
+  else if (field === "secStep") d.secStep = clamp(d.secStep + dir, 1, 30);
+  else if (field === "secMax") d.secMax = clamp(d.secMax + dir * 5, Math.max(NECK_START, 5), 300);
+  else if (field === "reps") {
+    if (k.neck) d.reps = clamp(d.reps + dir, NECK_START, d.secMax);
+    else if (k.timed) d.reps = clamp(d.reps + dir * 5, 5, 600);
+    else d.reps = clamp(d.reps + dir, 1, 60);
+  }
+  if (field === "reps") d.repsPick = d.reps;
+  // Snap from the reps last picked, so stepping the range around doesn't ratchet the target upwards
+  if (k.wave && (field === "repLow" || field === "repTop")) d.reps = snapWaveRep(d.repsPick ?? d.reps, draftRungs(d));
+  if (k.neck && d.reps > d.secMax) d.reps = d.secMax;
+  render();
+}
+function editSetKgStep(v){
+  const d = ui.editEx; const n = Number(v);
+  if (!d || !KG_STEP_OPTS.includes(n)) return;
+  d.kgStep = n; d.msg = ""; render();
+}
+function editSetReps(v){ const d = ui.editEx; if (!d) return; d.reps = d.repsPick = Number(v); d.msg = ""; render(); }
+/** Reset to default: fill the sheet with the program's settings. Working kg + target reps are progress, so they stay
+ *  (target reps only snap onto the default wave rungs). Nothing changes until Save. */
+function resetExerciseEditDraft(){
+  const d = ui.editEx; if (!d) return;
+  const ex = state.exercises[d.ei]; if (!ex) return;
+  const def = exerciseDefault(state.programId, ex.id) || ex;
+  const plain = applyEdits({...ex, sets: def.sets, rest: def.rest}, state.programId, {});
+  const fresh = editDraftFrom({...plain, name: isStageLadder(ex) ? ex.name : def.name, note: isStageLadder(ex) ? ex.note : (def.note || "")}, d.ei);
+  const k = editKind(ex);
+  ui.editEx = {...fresh, weight: d.weight, reps: k.wave ? snapWaveRep(d.reps, draftRungs(fresh)) : (k.neck ? Math.min(d.reps, NECK_MAX) : d.reps), msg: "Defaults loaded — tap Save to keep them"};
+  render();
+}
+function readEditTextFields(){
+  const d = ui.editEx; if (!d) return;
+  const n = document.querySelector("[data-edit-name]"), t = document.querySelector("[data-edit-note]");
+  if (n) d.name = n.value;
+  if (t) d.note = t.value;
+}
+function saveExerciseEdit(){
+  const d = ui.editEx; if (!d) return false;
+  const ei = state.exercises.findIndex(e => e.id === d.id);
+  const ex = state.exercises[ei]; if (!ex) { cancelExerciseEdit(); return false; }
+  const k = editKind(ex), pid = state.programId;
+  const name = String(d.name || "").replace(/\s+/g, " ").trim();
+  const fail = (m) => { d.msg = m; render(); return false; };
+  if (k.names && !name) return fail("Name can’t be blank");
+  if (!(d.kgStep > 0)) return fail("kg increase must be more than 0");
+  if (d.repTop < d.repLow) return fail("Top of the rep range must be at or above the bottom");
+  if (!(d.sets >= 1 && d.sets <= 10)) return fail("Sets must be 1–10");
+  if (!(d.rest >= 15 && d.rest <= 600)) return fail("Rest must be 15 s – 10 min");
+  const def = exerciseDefault(pid, ex.id) || ex;
+  const [bl, bt] = baseRange(ex);
+  const edit = {};
+  if (k.kgStep && d.kgStep !== KG_STEP) edit.kgStep = d.kgStep;
+  if (k.range && (d.repLow !== bl || d.repTop !== bt)) { edit.repLow = d.repLow; edit.repTop = d.repTop; }
+  if (d.sets !== def.sets) edit.sets = d.sets;
+  if (d.rest !== def.rest) edit.rest = d.rest;
+  if (k.names && name !== def.name) edit.name = name.slice(0, EDIT_NAME_MAX);
+  if (k.names && String(d.note || "").trim() !== String(def.note || "")) edit.note = String(d.note || "").trim().slice(0, EDIT_NOTE_MAX);
+  if (k.neck && d.secStep !== NECK_STEP) edit.secStep = d.secStep;
+  if (k.neck && d.secMax !== NECK_MAX) edit.secMax = d.secMax;
+  const all = sanitizeEdits(state.exerciseEdits);
+  const clean = sanitizeEdit(edit);
+  if (clean) (all[pid] ||= {})[ex.id] = clean;
+  else if (all[pid]) { delete all[pid][ex.id]; if (!Object.keys(all[pid]).length) delete all[pid]; }
+  state.exerciseEdits = all;
+  // Back to the program's sets / rest / name / note first, then lay the edits over them
+  let next = {...ex, sets: def.sets, rest: def.rest};
+  if (k.names) next = {...next, name: def.name, note: def.note};
+  if (next.sets !== ex.sets) next.setsLog = resizeSetsLog(ex.setsLog, next.sets);
+  next = applyEdits(next, pid, all);
+  if (next.sets !== ex.sets && next.setsLog.length !== next.sets) next.setsLog = resizeSetsLog(ex.setsLog, next.sets);
+  if (k.kg) next.weight = clampKg(d.weight);
+  let reps = Math.round(Number(d.reps) || ex.reps);
+  if (k.wave) reps = snapWaveRep(reps, waveRepsFor(next));
+  if (k.neck) reps = Math.max(NECK_START, Math.min(neckMaxFor(next), reps));
+  next.reps = Math.max(1, reps);
+  state.exercises = state.exercises.map((e, i) => i === ei ? next : e);
+  state.liftProgress = captureProgress(state.exercises, state.liftProgress);
+  ui.editEx = null; ui.panel = "none";
+  save();
+  toast(`${next.name} saved`, clean ? "Your settings" : "Program defaults");
+  render();
+  return true;
 }

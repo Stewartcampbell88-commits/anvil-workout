@@ -70,9 +70,9 @@ function render(){
     const tClass = isActive ? timeClass : "";
     const level = ex.levels?.length ? ex.levels[ex.levelIndex??0] : null;
     const wNeg = Number(ex.weight) < 0;
-    const weightCtrl = `<button class="icon-btn" data-act="weight" data-i="${ei}" data-d="-2.5" aria-label="Decrease weight">${I.minus}</button>
+    const weightCtrl = `<button class="icon-btn" data-act="weight" data-i="${ei}" data-d="-${kgStepFor(ex)}" aria-label="Decrease weight">${I.minus}</button>
            <span class="kg${wNeg?" neg":""}">${fmtKg(ex.weight)}</span>
-           <button class="icon-btn" data-act="weight" data-i="${ei}" data-d="2.5" aria-label="Increase weight">${I.plus}</button>
+           <button class="icon-btn" data-act="weight" data-i="${ei}" data-d="${kgStepFor(ex)}" aria-label="Increase weight">${I.plus}</button>
            <span class="muted" style="font-size:.875rem">${wNeg?"kg assist":"kg"}</span>`;
     const load = isNeckIso(ex)
       ? `<span class="muted" style="font-size:.875rem">Forward → left → back → right · ${esc(String(ex.reps))}s each · no kg</span>`
@@ -118,14 +118,15 @@ function render(){
       <article class="card${isActive?" active":""}${ex.skipped?" skipped":""}${resolved && !ex.skipped ? " " + statusCls : ""}" id="ex-${esc(ex.id)}">
         <div class="row">
           ${titleBlock}
-          <p class="meta">${esc(targetLabel(ex))}<br>${isNeckIso(ex) ? (ex.reps >= NECK_MAX ? `Max ${NECK_MAX}s · ${ex.failStreak}/3 no-rep` : `+${NECK_STEP}s next clean · max ${NECK_MAX}s`) : `${ex.streak}/3 clean · ${ex.failStreak}/3 no-rep`}${amrap?`<br><span style="opacity:.7;font-size:.65rem">Last set AMRAP · +2 → next kg</span>`:""}</p>
+          <p class="meta">${esc(targetLabel(ex))}<br>${isNeckIso(ex) ? (ex.reps >= neckMaxFor(ex) ? `Max ${neckMaxFor(ex)}s · ${ex.failStreak}/3 no-rep` : `+${neckStepFor(ex)}s next clean · max ${neckMaxFor(ex)}s`) : `${ex.streak}/3 clean · ${ex.failStreak}/3 no-rep`}${amrap?`<br><span style="opacity:.7;font-size:.65rem">Last set AMRAP · +2 → +${fmtStep(kgStepFor(ex))} kg</span>`:""}</p>
         </div>
         <div class="weight">${load}</div>
         ${isActive?`<div class="rest-box"><p class="cue" data-cue>${loggedCue}</p><p class="big ${tClass}" data-timer style="font-size:3rem">${remainText}</p>
           <div class="split" style="justify-content:center;margin-top:.625rem"><button class="icon-btn" data-act="rest" data-d="-15" aria-label="Minus 15 seconds">−</button>
           <button class="icon-btn" data-act="rest" data-d="15" aria-label="Plus 15 seconds">+</button></div></div>`:""}
         ${sets}
-        <div style="margin-top:.25rem;display:flex;justify-content:flex-end">
+        <div style="margin-top:.25rem;display:flex;justify-content:space-between;align-items:center">
+          <button class="ex-edit" data-act="edit-ex" data-i="${ei}" aria-label="Edit ${esc(ex.name)}">${I.pencil}<span>Edit</span></button>
           <button class="skip${ex.skipped?" on":""}" data-act="skip" data-i="${ei}">${ex.skipped?"Unskip":"Skip"}</button>
         </div>
       </article>`;
@@ -136,7 +137,7 @@ function render(){
     : "";
 
   const remove = ui.panel==="remove" ? `<section class="panel"><p class="tiny">This session</p>${
-    state.exercises.map(ex=>`<div class="rm"><span style="font-size:.875rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(ex.name)}</span><button data-act="remove" data-id="${esc(ex.id)}" data-name="${esc(ex.name)}">Remove</button></div>`).join("")
+    state.exercises.map(ex=>`<div class="rm"><span style="font-size:.875rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(ex.name)}</span><span style="display:flex;gap:.25rem;flex-shrink:0"><button data-act="edit-ex" data-i="${state.exercises.indexOf(ex)}" aria-label="Edit ${esc(ex.name)}">Edit</button><button data-act="remove" data-id="${esc(ex.id)}" data-name="${esc(ex.name)}">Remove</button></span></div>`).join("")
   }</section>` : "";
 
   const add = ui.panel==="add" ? `<section class="panel"><p class="tiny">Add a lift</p>${
@@ -348,6 +349,7 @@ ${restorePinField(".6rem")}
       <button class="skip-why-cancel" data-act="skip-cancel">Cancel</button>
     </div>
   </div></div>` : "";
+  const editSheet = ui.panel==="edit-ex" && ui.editEx && state.exercises[ui.editEx.ei] ? renderEditSheet(ui.editEx, state.exercises[ui.editEx.ei]) : "";
   const settings = ui.panel==="settings" ? `<div class="settings-sheet" role="dialog" aria-modal="true" aria-label="Settings"><div class="settings-sheet-inner">
     <div class="settings-head"><h2>Settings</h2><button class="icon-btn" data-act="panel" data-p="settings" aria-label="Close">${I.x}</button></div>
     <div class="settings-body">
@@ -426,6 +428,7 @@ ${restorePinField(".5rem")}
     ${balanceHold}
     ${bodyweight}
     ${skipAsk}
+    ${editSheet}
     ${settings}
     ${tabBar}
   `;
@@ -449,6 +452,8 @@ document.getElementById("app").addEventListener("change", (e) => {
 });
 
 document.getElementById("app").addEventListener("input", (e) => {
+  const en = e.target.closest("[data-edit-name],[data-edit-note]");
+  if (en) { if (ui.editEx) { if (en.matches("[data-edit-name]")) ui.editEx.name = en.value; else ui.editEx.note = en.value; } return; }
   const sn = e.target.closest("[data-skip-note]");
   if (sn) { if (ui.skipAsk) ui.skipAsk.note = sn.value; return; }
   const rn = e.target.closest("[data-restore-name]");
@@ -469,3 +474,58 @@ document.getElementById("app").addEventListener("change", (e) => {
   render();
 });
 /* ===== How-to guides: figure engine (side/front stick figure, IK, offline) ===== */
+
+/** v51 Edit sheet: steppers only (no free typing for numbers), so every value is in range by construction. */
+function renderEditSheet(d, ex){
+  const k = editKind(ex);
+  const stepper = (field, label, value, hint = "") => `<div class="edit-row"><div class="edit-lab"><span>${label}</span>${hint ? `<small>${hint}</small>` : ""}</div>
+      <div class="edit-step"><button class="icon-btn" data-act="edit-step" data-f="${field}" data-d="-1" aria-label="Less ${esc(label)}">${I.minus}</button>
+      <span class="edit-val" data-edit-val="${field}">${value}</span>
+      <button class="icon-btn" data-act="edit-step" data-f="${field}" data-d="1" aria-label="More ${esc(label)}">${I.plus}</button></div></div>`;
+  const rungs = draftRungs(d);
+  const restTxt = d.rest >= 60 ? `${Math.floor(d.rest/60)}:${String(d.rest%60).padStart(2,"0")}` : `${d.rest}s`;
+  const unit = k.timed ? "s" : (ex.bilateral ? " ea" : "");
+  const sec = (t) => `<p class="edit-sec">${t}</p>`;
+  let body = "";
+  if (k.neck) {
+    body += sec("Hold time")
+      + stepper("reps", "Current hold", `${d.reps}s`, "per direction")
+      + stepper("secStep", "Increase per clean session", `+${d.secStep}s`)
+      + stepper("secMax", "Maximum hold", `${d.secMax}s`)
+      + `<p class="edit-hint">Timed lift — no kg. 3 short sessions drop back ${d.secStep}s (never below ${NECK_START}s).</p>`;
+  }
+  if (k.kgStep) {
+    body += sec("kg increase per bump") + `<div class="chips edit-chips">${KG_STEP_OPTS.map(v => `<button class="chip${v===d.kgStep?" on":""}" data-act="edit-kg-step" data-v="${v}">${fmtStep(v)}</button>`).join("")}</div>`;
+  }
+  if (k.kg) body += stepper("weight", "Current working kg", `${fmtKg(d.weight)} kg`, ex.bw || d.weight < 0 ? "below 0 = assisted" : `steps of ${fmtStep(d.kgStep)}`);
+  body += sec("Sets and reps") + stepper("sets", "Sets", String(d.sets));
+  if (k.wave) {
+    body += `<div class="edit-row edit-col"><div class="edit-lab"><span>Target reps${ex.bilateral ? " (each side)" : ""}</span><small>a rung on the wave</small></div>
+      <div class="chips edit-chips">${rungs.map(r => `<button class="chip${r===d.reps?" on":""}" data-act="edit-reps" data-v="${r}">${r}</button>`).join("")}</div></div>`;
+  } else if (!k.neck) {
+    body += stepper("reps", k.timed ? "Target seconds" : `Target reps${ex.bilateral ? " (each side)" : ""}`, `${d.reps}${unit}`);
+  }
+  if (k.range) {
+    body += sec("Rep range before kg goes up")
+      + stepper("repLow", "Start at", `${d.repLow}`)
+      + stepper("repTop", "Add kg after", `${d.repTop}`)
+      + `<p class="edit-hint">${k.wave
+        ? `Wave ${rungs.join(" → ")}${k.kgStep ? `, then +${fmtStep(d.kgStep)} kg and back to ${rungs[0]}` : " (no kg on this lift)"}. 3 clean sessions per rung; AMRAP +2 jumps straight to +kg.`
+        : `+2 reps after 3 clean sessions up to ${d.repTop}, then +${fmtStep(d.kgStep)} kg and back to ${d.repLow}.`}</p>`;
+  }
+  body += sec("Rest") + stepper("rest", "Rest between sets", restTxt, "15 s steps");
+  if (k.names) {
+    body += sec("Name and cues") + `<label class="edit-field">Name<input data-edit-name type="text" maxlength="${EDIT_NAME_MAX}" value="${esc(d.name)}" autocomplete="off" enterkeyhint="done"></label>
+      <label class="edit-field">Notes / cues<textarea data-edit-note rows="3" maxlength="${EDIT_NOTE_MAX}" placeholder="e.g. Brace, slow down">${esc(d.note)}</textarea></label>
+      <p class="edit-hint">Renaming keeps all history and graphs linked.</p>`;
+  } else body += `<p class="edit-hint">Name and cues follow the ladder stage (${esc(ex.name)}).</p>`;
+  return `<div class="settings-sheet" role="dialog" aria-modal="true" aria-label="Edit exercise"><div class="settings-sheet-inner">
+    <div class="settings-head"><div style="min-width:0"><h2>Edit exercise</h2><p class="note" style="margin:.125rem 0 0">${esc(ex.name)} · ${esc(getProgram(state.programId).name)}</p></div><button class="icon-btn" data-act="edit-cancel" aria-label="Cancel">${I.x}</button></div>
+    <div class="settings-body edit-body" style="overflow-y:auto">
+      ${body}
+      ${d.msg ? `<p class="edit-msg" role="status">${esc(d.msg)}</p>` : ""}
+      <button class="edit-reset" data-act="edit-reset">${I.reset} Reset to default</button>
+    </div>
+    <div class="edit-actions"><button data-act="edit-cancel">Cancel</button><button class="primary" data-act="edit-save">Save</button></div>
+  </div></div>`;
+}

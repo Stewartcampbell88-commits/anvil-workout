@@ -7,7 +7,7 @@ const ANVIL_PREVIEW = /\/(anvil-)?preview\//.test(location.pathname);
 const PREVIEW_PREFIX = "anvil-preview:";
 function K(key){ return ANVIL_PREVIEW ? PREVIEW_PREFIX + key : key; }
 const STORAGE = K("anvil_app_v3");
-const APP_VERSION = "anvil-v50";
+const APP_VERSION = "anvil-v51";
 const CUE_LOUDNESS = 2.4;
 const CUE_MAX_GAIN = 0.95;
 const SET_OPTS = [1,2,3,4,5];
@@ -91,16 +91,16 @@ const WALKS_MAX = 2000;
 const KG_STEP = 2.5;
 const KG_FLOOR = -50; // assisted (negative) loads; floor is practical plate steps
 function clampKg(w){
-  const n = +Number(w).toFixed(1);
+  const n = +Number(w).toFixed(2);
   if (!Number.isFinite(n)) return 0;
   return Math.max(KG_FLOOR, n);
 }
 /** Display kg; unicode minus for negatives (assisted). */
 function fmtKg(w){
-  const n = +Number(w).toFixed(1);
+  const n = +Number(w).toFixed(2);
   if (!Number.isFinite(n)) return "0";
-  const body = n.toFixed(1).replace(/\.0$/, "");
-  return n < 0 ? ("−" + body.slice(1)) : body;
+  const body = String(Math.abs(n));
+  return n < 0 ? ("−" + body) : body;
 }
 function usesAmrap(ex){
   if (!ex || (ex.sets ?? 0) < 2) return false;
@@ -167,7 +167,7 @@ function balanceKgHold(programId, ex, nextWeight, sessionExs, progress){
   // A bodyweight (0 kg), assisted or unset squat is no ceiling — otherwise EMBER/TITAN bench (and the
   // row/press chained under it) could never gain kg. A loaded squat still caps bench as before.
   if (SQUAT_IDS.has(ceilId) && !(ceilW > 0)) return null;
-  const nw = +Number(nextWeight).toFixed(1);
+  const nw = +Number(nextWeight).toFixed(2);
   if (!(nw > ceilW)) return null;
   return {
     id: ex.id,
@@ -178,27 +178,43 @@ function balanceKgHold(programId, ex, nextWeight, sessionExs, progress){
     ceilingWeight: ceilW,
   };
 }
-function snapWaveRep(reps){
-  const n = Number(reps);
-  if (!Number.isFinite(n)) return WAVE_REPS[0];
-  if (WAVE_REPS.includes(n)) return n;
-  const up = WAVE_REPS.find(w => w >= n);
-  return up != null ? up : WAVE_REPS[WAVE_REPS.length - 1];
+/** v51 per-exercise edits: wave rungs climb +2 reps from the range's low end to its top, then +kg and back to low. */
+function waveRepsFor(ex){
+  const lo = Number.isInteger(ex?.repLow) ? ex.repLow : null, hi = Number.isInteger(ex?.repTop) ? ex.repTop : null;
+  if (lo == null && hi == null) return WAVE_REPS;
+  const low = lo ?? WAVE_REPS[0], top = Math.max(low, hi ?? WAVE_REPS[WAVE_REPS.length - 1]);
+  const out = [];
+  for (let r = low; r < top; r += 2) out.push(r);
+  out.push(top);
+  return out;
 }
-function nextWaveStep(reps, weight){
-  const idx = WAVE_REPS.indexOf(reps);
-  if (idx >= 0 && idx < WAVE_REPS.length - 1) {
-    const r = WAVE_REPS[idx + 1];
-    return {reps:r, weight, note:`wave → 3×${r}`};
+function kgStepFor(ex){ const n = Number(ex?.kgStep); return Number.isFinite(n) && n > 0 ? n : KG_STEP; }
+function neckStepFor(ex){ const n = Number(ex?.secStep); return Number.isInteger(n) && n > 0 ? n : NECK_STEP; }
+function neckMaxFor(ex){ const n = Number(ex?.secMax); return Number.isInteger(n) && n >= NECK_START ? n : NECK_MAX; }
+function fmtStep(n){ return String(+Number(n).toFixed(2)); }
+function snapWaveRep(reps, rungs = WAVE_REPS){
+  const n = Number(reps);
+  if (!Number.isFinite(n)) return rungs[0];
+  if (rungs.includes(n)) return n;
+  const up = rungs.find(w => w >= n);
+  return up != null ? up : rungs[rungs.length - 1];
+}
+function nextWaveStep(reps, weight, ex){
+  const rungs = waveRepsFor(ex), step = kgStepFor(ex), sets = ex?.sets ?? 3;
+  const low = rungs[0], top = rungs[rungs.length - 1];
+  const idx = rungs.indexOf(reps);
+  if (idx >= 0 && idx < rungs.length - 1) {
+    const r = rungs[idx + 1];
+    return {reps:r, weight, note:`wave → ${sets}×${r}`};
   }
-  if (idx === WAVE_REPS.length - 1 || reps >= WAVE_REPS[WAVE_REPS.length - 1]) {
-    const w = +(weight + 2.5).toFixed(1);
-    return {reps:6, weight:w, note:`wave → 3×6 +2.5kg → ${w}kg`};
+  if (idx === rungs.length - 1 || reps >= top) {
+    const w = +(weight + step).toFixed(2);
+    return {reps:low, weight:w, note:`wave → ${sets}×${low} +${fmtStep(step)}kg → ${w}kg`};
   }
-  const next = WAVE_REPS.find(w => w > reps);
-  if (next != null) return {reps:next, weight, note:`wave snap → 3×${next}`};
-  const w = +(weight + 2.5).toFixed(1);
-  return {reps:6, weight:w, note:`wave → 3×6 +2.5kg → ${w}kg`};
+  const next = rungs.find(w => w > reps);
+  if (next != null) return {reps:next, weight, note:`wave snap → ${sets}×${next}`};
+  const w = +(weight + step).toFixed(2);
+  return {reps:low, weight:w, note:`wave → ${sets}×${low} +${fmtStep(step)}kg → ${w}kg`};
 }
 function normalizeWaveTargets(){
   const pid = state?.programId;
@@ -206,8 +222,9 @@ function normalizeWaveTargets(){
   let changed = false;
   const progress = {...(state.liftProgress || {})};
   state.exercises = (state.exercises || []).map(ex => {
-    if (isPlankSeconds(ex) || ex.reps == null || WAVE_REPS.includes(ex.reps)) return ex;
-    const reps = snapWaveRep(ex.reps);
+    const rungs = waveRepsFor(ex);
+    if (isPlankSeconds(ex) || ex.reps == null || rungs.includes(ex.reps)) return ex;
+    const reps = snapWaveRep(ex.reps, rungs);
     changed = true;
     const p = progress[ex.id];
     if (p && typeof p === "object" && p.reps !== reps) progress[ex.id] = {...p, reps};
@@ -216,8 +233,9 @@ function normalizeWaveTargets(){
   for (const [id, p] of Object.entries(progress)) {
     if (!p || typeof p !== "object" || p.reps == null) continue;
     if (id === "em-plank" || id === "em-heaves" || id === "tp-plank" || id === "tp-heaves" || NECK_IDS.has(id) || /seconds/i.test(p.note||"")) continue;
-    if (WAVE_REPS.includes(p.reps)) continue;
-    progress[id] = {...p, reps: snapWaveRep(p.reps)};
+    const rungs = waveRepsFor(editFor(pid, id));
+    if (rungs.includes(p.reps)) continue;
+    progress[id] = {...p, reps: snapWaveRep(p.reps, rungs)};
     changed = true;
   }
   if (changed) state.liftProgress = progress;
@@ -384,8 +402,9 @@ function captureProgress(exs, prev={}){
   for (const ex of exs) next[ex.id] = {reps:ex.reps, weight:ex.weight, streak:ex.streak, failStreak:ex.failStreak, levelIndex:ex.levelIndex};
   return next;
 }
-function applyProgress(exs, progress, programId){
+function applyProgress(exs, progress, programId, edits){
   const pid = programId || (typeof state !== "undefined" && state?.programId);
+  const allEdits = edits !== undefined ? edits : (typeof state !== "undefined" ? state?.exerciseEdits : null);
   const waveProg = pid === "ember" || pid === "anvil" || pid === "titan";
   return exs.map(ex => {
     const p = progress[ex.id];
@@ -444,9 +463,12 @@ function applyProgress(exs, progress, programId){
       }
       next = syncCossackExercise(next);
     }
-    if ((waveProg || String(next.id||"").startsWith("em-") || String(next.id||"").startsWith("tp-")) && !isPlankSeconds(next) && next.reps != null && !WAVE_REPS.includes(next.reps)) {
-      next = {...next, reps: snapWaveRep(next.reps)};
+    next = applyEdits(next, pid, allEdits);
+    const rungs = waveRepsFor(next);
+    if ((waveProg || String(next.id||"").startsWith("em-") || String(next.id||"").startsWith("tp-")) && !isPlankSeconds(next) && next.reps != null && !rungs.includes(next.reps)) {
+      next = {...next, reps: snapWaveRep(next.reps, rungs)};
     }
+    if (isNeckIso(next) && next.reps > neckMaxFor(next)) next = {...next, reps: neckMaxFor(next)};
     return next;
   });
 }
@@ -472,6 +494,76 @@ function skipReasonText(reason, note){
   const n = cleanSkipNote(note);
   if (!r) return n;
   return r.id === "other" && n ? `Other: ${n}` : r.label;
+}
+/** v51 per-exercise Edit screen. Settings live in state.exerciseEdits[programId][exerciseId] (only changed fields);
+ *  working kg + target reps are progress, so they're written straight to the lift / liftProgress instead.
+ *  The lift id never changes, so a rename keeps history, progress graphs and the balance chain linked. */
+const KG_STEP_OPTS = [0.5, 1, 1.25, 2, 2.5, 5, 10];
+const EDIT_NAME_MAX = 60, EDIT_NOTE_MAX = 300;
+const EDIT_INT = { sets:[1,10], repLow:[1,50], repTop:[1,60], rest:[10,600], secStep:[1,30], secMax:[5,300] };
+const EDIT_DERIVED = ["kgStep","repLow","repTop","secStep","secMax"];
+function sanitizeEdit(o){
+  if (!o || typeof o !== "object" || Array.isArray(o)) return null;
+  const out = {};
+  const k = Number(o.kgStep);
+  if (o.kgStep != null && Number.isFinite(k) && k >= 0.25 && k <= 20) out.kgStep = +k.toFixed(2);
+  for (const [f, [lo, hi]] of Object.entries(EDIT_INT)) {
+    if (o[f] == null || o[f] === "") continue;
+    const n = Number(o[f]);
+    if (Number.isFinite(n) && Number.isInteger(n) && n >= lo && n <= hi) out[f] = n;
+  }
+  if (out.repLow != null && out.repTop != null && out.repTop < out.repLow) { delete out.repLow; delete out.repTop; }
+  if (out.secMax != null && out.secMax < NECK_START) delete out.secMax;
+  if (typeof o.name === "string") { const n = o.name.replace(/\s+/g, " ").trim().slice(0, EDIT_NAME_MAX); if (n) out.name = n; }
+  if (typeof o.note === "string") out.note = o.note.replace(/[ \t]+/g, " ").trim().slice(0, EDIT_NOTE_MAX);
+  return Object.keys(out).length ? out : null;
+}
+function sanitizeEdits(all){
+  const out = {};
+  if (!all || typeof all !== "object" || Array.isArray(all)) return out;
+  for (const [pid, m] of Object.entries(all)) {
+    if (!PROGRAMS.some(p => p.id === pid) || !m || typeof m !== "object" || Array.isArray(m)) continue;
+    for (const [id, o] of Object.entries(m)) {
+      if (!/^[\w-]{1,40}$/.test(id)) continue;
+      const c = sanitizeEdit(o);
+      if (c) (out[pid] ||= {})[id] = c;
+    }
+  }
+  return out;
+}
+function editFor(pid, id, edits){
+  const all = edits !== undefined ? edits : (typeof state !== "undefined" ? state?.exerciseEdits : null);
+  const o = all?.[pid]?.[id];
+  return (o && typeof o === "object") ? o : {};
+}
+/** The lift as the program (or the Add-a-lift list) defines it — what "Reset to default" goes back to. */
+function exerciseDefault(pid, id){
+  const prog = getProgram(pid);
+  for (const d of prog.days) { const e = d.exercises.find(x => x.id === id); if (e) return e; }
+  for (const g of LIBRARY) { const e = g.lifts.find(x => x.id === id); if (e) return e; }
+  for (const p of PROGRAMS) for (const d of p.days) { const e = d.exercises.find(x => x.id === id); if (e) return e; }
+  return null;
+}
+function isStageLadder(ex){ return isHeaveLadder(ex) || isBenchLadder(ex) || isCossackLadder(ex); }
+function resizeSetsLog(log, n){
+  const cur = Array.isArray(log) ? log.slice(0, n) : [];
+  while (cur.length < n) cur.push({ok:false, miss:false});
+  return cur;
+}
+/** Lay the saved edits for this program over a lift. Fields with no edit are cleared back to the built-in rules. */
+function applyEdits(ex, pid, edits){
+  if (!ex) return ex;
+  const out = {...ex};
+  for (const f of EDIT_DERIVED) delete out[f];
+  const o = editFor(pid, ex.id, edits);
+  for (const f of EDIT_DERIVED) if (o[f] != null) out[f] = o[f];
+  if (o.sets != null && o.sets !== out.sets) { out.sets = o.sets; out.setsLog = resizeSetsLog(out.setsLog, o.sets); }
+  if (o.rest != null) out.rest = o.rest;
+  if (!isStageLadder(out)) {
+    if (o.name != null) out.name = o.name;
+    if (o.note != null) out.note = o.note || undefined;
+  }
+  return out;
 }
 function hydrate(raw){
   if (!raw?.length) return null;
@@ -555,7 +647,7 @@ function targetLabel(ex){
   return ex.bilateral ? `${ex.sets} × ${ex.reps}${unit} each` : `${ex.sets} × ${ex.reps}${unit}`;
 }
 function maxRep(ex){
-  if (isNeckIso(ex)) return Math.max(ex.reps || 0, 60);
+  if (isNeckIso(ex)) return Math.max(ex.reps || 0, neckMaxFor(ex), 60);
   if (ex.nocap) return 50;
   if (ex.cap) return ex.cap;
   return Math.max(ex.reps || 0, 20);
@@ -577,6 +669,7 @@ const I = {
   sound: `<svg viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a9 9 0 0 1 0 14"/></svg>`,
   settings: `<svg viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>`,
   x: `<svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`,
+  pencil: `<svg viewBox="0 0 24 24"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>`,
   walk: `<svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><path d="M10 22l2-7 2 3 3 2"/><path d="M9 10l3 2 2-3 3 1"/></svg>`,
   workout: `<svg viewBox="0 0 24 24"><path d="M6.5 6.5v11"/><path d="M17.5 6.5v11"/><path d="M4 9v6"/><path d="M20 9v6"/><path d="M6.5 12h11"/></svg>`,
 };
