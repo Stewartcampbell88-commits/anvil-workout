@@ -16,12 +16,12 @@ const idx = (page, id) => page.evaluate((id) => state.exercises.findIndex((e) =>
 const endTimer = (page) => page.evaluate(() => { restEndAt = Date.now() - 1; restTick(); return { mode: ui.restMode, remain: ui.remain, running: ui.running, hold: ui.hold }; });
 const WANT = [
   ["Cat-cow", 8, false, false], ["Child’s pose with side reach", 30, true, true], ["90/90 hip switches", 8, false, true],
-  ["Half-kneeling hip flexor stretch", 30, true, true], ["Glute bridge (2 s hold)", 10, false, false], ["Lying figure-4 stretch", 30, true, true],
+  ["Half-kneeling hip flexor stretch", 30, true, true], ["Seated psoas lift over roller", 10, false, true], ["Glute bridge (2 s hold)", 10, false, false], ["Lying figure-4 stretch", 30, true, true],
   ["Dead bug", 6, false, true], ["World’s greatest stretch", 4, false, true], ["Thoracic open book", 6, false, true],
   ["Wall ankle rocks", 10, false, true], ["Wall slides", 10, false, false], ["Deep squat hold", 30, true, false],
 ];
 
-test("12 moves in order, cue line each, no kg; Mobility button on ANVIL only; A/B lists untouched", async () => {
+test("13 moves in order, cue line each, no kg; Mobility button on ANVIL only; A/B lists untouched", async () => {
   const app = await openApp(srv.url, { storage: { [KEYS.STATE]: dayA() } });
   const p = app.page;
   const list = await p.evaluate(() => MOBILITY.map((m) => [m.name, m.reps, !!m.timed, !!m.bilateral, m.sets, m.weight, !!m.note, m.id.startsWith("mob-")]));
@@ -34,13 +34,13 @@ test("12 moves in order, cue line each, no kg; Mobility button on ANVIL only; A/
   await app.close();
 });
 
-test("open Mobility: banner, 12 cards, no kg / Add / Remove, Log mobility; tapping A comes back with Day A as it was", async () => {
+test("open Mobility: banner, 13 cards, no kg / Add / Remove, Log mobility; tapping A comes back with Day A as it was", async () => {
   const app = await openApp(srv.url, { storage: { [KEYS.STATE]: dayA() } });
   const p = app.page;
   const beforeA = await p.evaluate(() => JSON.stringify(state.exercises));
   await p.click('[data-act="mobility"]');
   const r = await p.evaluate(() => ({ mobile: state.mobile, n: state.exercises.length, day: state.dayIndex, ids: state.exercises.map((e) => e.id) }));
-  assert.deepEqual([r.mobile, r.n, r.day], [true, 12, 0]);
+  assert.deepEqual([r.mobile, r.n, r.day], [true, 13, 0]);
   const text = await p.$eval("#app", (el) => el.textContent);
   assert.match(text, /Pain-free, slow, no bouncing/); assert.match(text, /ANVIL · Mobility/); assert.match(text, /Log mobility/);
   assert.equal(await p.$('[data-act="weight"]'), null); assert.equal(await p.$('[data-p="add"]'), null);
@@ -89,9 +89,9 @@ test("rep moves tap to complete; each-side rep moves use the switch-sides timer"
   await p.click('#ex-mob-9090 [data-act="set"]');
   assert.deepEqual(await p.evaluate(() => [state.exercises[2].setsLog[0].ok, ui.restMode]), [true, "rest"]);
   await p.click('#ex-mob-wgs [data-act="set"]');
-  assert.deepEqual(await p.evaluate(() => [state.exercises[7].setsLog[0], ui.restMode, ui.remain]), [{ ok: false, miss: false, half: true }, "switch", 10]);
+  assert.deepEqual(await p.evaluate(() => [state.exercises[8].setsLog[0], ui.restMode, ui.remain]), [{ ok: false, miss: false, half: true }, "switch", 10]);
   await p.click('#ex-mob-wgs [data-act="set"]');
-  assert.equal(await p.evaluate(() => state.exercises[7].setsLog[0].ok), true);
+  assert.equal(await p.evaluate(() => state.exercises[8].setsLog[0].ok), true);
   await app.close();
 });
 
@@ -103,18 +103,18 @@ test("Log mobility: history type 'mobility' with duration + skips; Day A/B, prog
   const before = await p.evaluate(() => ({ ex: JSON.stringify(state.exercises), lp: JSON.stringify(state.liftProgress), day: state.dayIndex }));
   await p.evaluate(() => {
     enterMobility();
-    state.exercises.forEach((e, i) => { if (i < 10) e.setsLog.forEach((_, si) => markSet(i, si)); });
-    skipExercise(10, "time"); skipExercise(11, "pain");
+    state.exercises.forEach((e, i) => { if (i < 11) e.setsLog.forEach((_, si) => markSet(i, si)); });
+    skipExercise(11, "time"); skipExercise(12, "pain");
     const c = loadClock(); saveClock({ ...c, startedAt: c.startedAt - 14 * 60000 });
     onLog();
   });
   const s = await ls(p, KEYS.STATE);
   const h = s.history[0];
-  assert.deepEqual([h.type, h.day, h.programId, h.lifts.length], ["mobility", "Mobility", "anvil", 10]);
+  assert.deepEqual([h.type, h.day, h.programId, h.lifts.length], ["mobility", "Mobility", "anvil", 11]);
   assert.ok(h.lifts.every((l) => l.id.startsWith("mob-") && l.weight === 0 && l.clean));
   assert.deepEqual(h.skips.map((x) => [x.id, x.reason]), [["mob-wallslide", "time"], ["mob-squat", "pain"]]);
   assert.ok(h.durationSec >= 14 * 60 && h.startedAt && h.endedAt);
-  assert.match(h.notes[0], /^Mobility: 10\/12 moves · 2 skipped · 14 min/);
+  assert.match(h.notes[0], /^Mobility: 11\/13 moves · 2 skipped · 14 min/);
   assert.equal(s.history.length, raw.history.length + 1);
   assert.equal(s.mobility.active, false);
   assert.ok(s.mobility.exercises.every((e) => e.setsLog.every((x) => !x.ok && !x.miss) && !e.skipped), "mobility reset for next time");
@@ -127,7 +127,7 @@ test("Log mobility: history type 'mobility' with duration + skips; Day A/B, prog
   assert.equal(post.data.history[0].type, "mobility");
   assert.ok(Array.isArray(post.data.mobility.exercises));
   const rows = gas.sheetRows("Sessions").filter((r) => r[4] === "Mobility");
-  assert.equal(rows.length, 10, "Sessions tab rows, day = Mobility");
+  assert.equal(rows.length, 11, "Sessions tab rows, day = Mobility");
   assert.deepEqual(app.errors, []);
   await app.close();
 });
@@ -149,7 +149,7 @@ test("mid-mobility survives reload; Export → Import carries it; old backups im
   const text = await p.evaluate(() => window.__exports[0]);
   const j = JSON.parse(text);
   assert.equal(j.exercises[0].id, "squat", "backup 'exercises' is always the A/B list");
-  assert.equal(j.mobility.active, true); assert.equal(j.mobility.exercises.length, 12);
+  assert.equal(j.mobility.active, true); assert.equal(j.mobility.exercises.length, 13);
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "anvil-")), "b.json"); fs.writeFileSync(file, text);
   const dst = await openApp(srv.url, { storage: { [KEYS.STATE]: { programId: "ember", dayIndex: 0, history: [], liftProgress: {}, bodyWeightLog: [] } } });
   const input = await dst.page.$("#import-file");
@@ -159,7 +159,7 @@ test("mid-mobility survives reload; Export → Import carries it; old backups im
   assert.deepEqual(await dst.page.evaluate(() => [state.mobile, state.exercises[0].setsLog[0].ok]), [true, true]);
   await dst.close();
   await p.evaluate(() => applyBackup({ programId: "anvil", dayIndex: 1, history: [], liftProgress: {}, bodyWeightLog: [] }));
-  assert.deepEqual(await p.evaluate(() => [state.mobile, state.dayIndex, state.altExercises.length, state.altExercises[0].id]), [false, 1, 12, "mob-catcow"]);
+  assert.deepEqual(await p.evaluate(() => [state.mobile, state.dayIndex, state.altExercises.length, state.altExercises[0].id]), [false, 1, 13, "mob-catcow"]);
   assert.deepEqual(app.errors, []);
   await app.close();
 });

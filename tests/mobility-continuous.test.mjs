@@ -31,15 +31,15 @@ const nextPhase = async (p) => { await p.evaluate(() => window.__adv(Math.max(0,
 test("default work times: rep moves get a work timer; dead bug + 90/90 alternate in place (one block, no switch)", async () => {
   const app = await openMob();
   const r = await app.page.evaluate(() => state.exercises.map((e) => [e.id.slice(4), workSecFor(e), runSides(e), switchSecFor(e)]));
-  assert.deepEqual(r, [["catcow", 40, 1, 0], ["child", 30, 2, 10], ["9090", 50, 1, 0], ["hipflex", 30, 2, 10], ["bridge", 40, 1, 0], ["fig4", 30, 2, 10],
+  assert.deepEqual(r, [["catcow", 40, 1, 0], ["child", 30, 2, 10], ["9090", 50, 1, 0], ["hipflex", 30, 2, 10], ["psoas", 40, 2, 10], ["bridge", 40, 1, 0], ["fig4", 30, 2, 10],
     ["deadbug", 40, 1, 0], ["wgs", 25, 2, 10], ["openbook", 25, 2, 10], ["ankle", 25, 2, 10], ["wallslide", 40, 1, 0], ["squat", 30, 1, 0]]);
-  assert.equal(await app.page.evaluate(() => routineSeconds(state.exercises)), 800);
-  assert.match(await app.page.$eval('[data-act="run-start"]', (el) => el.textContent), /Start routine · ~13 min/);
+  assert.equal(await app.page.evaluate(() => routineSeconds(state.exercises)), 905);
+  assert.match(await app.page.$eval('[data-act="run-start"]', (el) => el.textContent), /Start routine · ~15 min/);
   assert.match(await app.page.$eval("#ex-mob-deadbug", (el) => el.textContent), /6 each side, alternating/);
   await app.close();
 });
 
-test("Start runs all 12 moves hands-free in order, auto-marks green, ends with summary → Log mobility", async () => {
+test("Start runs all 13 moves hands-free in order, auto-marks green, ends with summary → Log mobility", async () => {
   const app = await openMob();
   const p = app.page;
   await p.click('[data-act="run-start"]');
@@ -48,20 +48,20 @@ test("Start runs all 12 moves hands-free in order, auto-marks green, ends with s
   for (let guard = 0; ph && ph.phase !== "done" && guard < 100; guard++) { seq.push([ph.phase, ph.id.slice(4), ph.side, ph.left]); ph = await nextPhase(p); }
   assert.deepEqual(seq.slice(0, 10), [["next", "catcow", 1, 5], ["work", "catcow", 1, 40], ["next", "child", 1, 15], ["work", "child", 1, 30], ["switch", "child", 2, 10],
     ["work", "child", 2, 30], ["next", "9090", 1, 15], ["work", "9090", 1, 50], ["next", "hipflex", 1, 15], ["work", "hipflex", 1, 30]]);
-  assert.equal(seq.reduce((t, s) => t + s[3], 0), 800, "phase lengths add up to the estimate");
-  assert.equal(seq.filter((s) => s[0] === "switch").length, 6);
+  assert.equal(seq.reduce((t, s) => t + s[3], 0), 905, "phase lengths add up to the estimate");
+  assert.equal(seq.filter((s) => s[0] === "switch").length, 7);
   assert.equal(ph.phase, "done");
   const s = await p.evaluate(() => ({ ok: state.exercises.every((e) => e.setsLog.every((x) => x.ok)), half: state.exercises.some((e) => e.setsLog.some((x) => x.half && !x.ok)), wake: window.__wake, cues: window.__cue }));
   assert.equal(s.ok, true, "every move green"); assert.equal(s.half, false);
   assert.ok(s.wake >= 1, "wake lock requested");
-  assert.equal(s.cues.filter((c) => c === "cueSwitch").length, 6);
-  assert.ok(s.cues.filter((c) => c === "cueComplete").length >= 19, "GO at each work start + end chime");
+  assert.equal(s.cues.filter((c) => c === "cueSwitch").length, 7);
+  assert.ok(s.cues.filter((c) => c === "cueComplete").length >= 21, "GO at each work start + end chime");
   const panel = await p.$eval(".run-panel", (el) => el.textContent);
-  assert.match(panel, /Routine complete/); assert.match(panel, /12\/12 moves/);
+  assert.match(panel, /Routine complete/); assert.match(panel, /13\/13 moves/);
   await p.click('.run-panel [data-act="log"]');
   const st = await ls(p, KEYS.STATE);
-  assert.deepEqual([st.history[0].type, st.history[0].lifts.length, st.mobility.active], ["mobility", 12, false]);
-  assert.ok(st.history[0].durationSec >= 795, `duration ${st.history[0].durationSec}`);
+  assert.deepEqual([st.history[0].type, st.history[0].lifts.length, st.mobility.active], ["mobility", 13, false]);
+  assert.ok(st.history[0].durationSec >= 900, `duration ${st.history[0].durationSec}`);
   assert.deepEqual(app.errors, []);
   await app.close();
 });
@@ -84,7 +84,8 @@ test("Pause / Resume freezes the countdown; ±15 s; 3-2-1 ticks; tapping the cur
   await p.click('[data-act="run-adj"][data-d="-15"]');
   await p.evaluate(() => { window.__cue = []; window.__adv(27500); window.__adv(1000); window.__adv(1000); });
   assert.deepEqual(await p.evaluate(() => window.__cue.filter((c) => c === "cueCountdown").length), 3);
-  await p.click('#ex-mob-catcow [data-act="set"]');
+  // el.click(): in the 800×600 test window the sticky run panel sits over the card's rep box (v56 card pictures)
+  await p.$eval('#ex-mob-catcow [data-act="set"]', (el) => el.click());
   ph = await phase(p);
   assert.deepEqual([ph.phase, ph.id], ["next", "mob-child"]);
   assert.equal(await p.evaluate(() => state.exercises[0].setsLog[0].ok), true);

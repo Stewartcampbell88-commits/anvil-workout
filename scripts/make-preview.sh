@@ -9,7 +9,7 @@ OUT="${1:?usage: make-preview.sh <out-dir>}"
 [[ "$(cd "$(dirname "$OUT")" 2>/dev/null && pwd)/$(basename "$OUT")" != "$ROOT/preview" ]] || { echo "refusing to overwrite ./preview (the redirect to live)"; exit 1; }
 rm -rf "$OUT"; mkdir -p "$OUT"
 for f in index.html sw.js favicon.svg icon.svg icon-192.png icon-192-maskable.png icon-512.png icon-512-maskable.png; do cp "$ROOT/$f" "$OUT/"; done
-for d in css js sounds; do cp -r "$ROOT/$d" "$OUT/"; done
+for d in css js sounds img; do cp -r "$ROOT/$d" "$OUT/"; done
 python3 - "$ROOT/manifest.json" "$OUT/manifest.json" <<'PY'
 import json, sys
 m = json.load(open(sys.argv[1]))

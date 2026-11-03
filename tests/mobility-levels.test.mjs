@@ -21,7 +21,7 @@ async function openMob(storage){
 const pick = (p, id, l) => p.$eval(`#ex-mob-${id} [data-act="mob-level"][data-l="${l}"]`, (el) => el.click());
 const card = (p, id) => p.$eval(`#ex-mob-${id}`, (el) => el.textContent);
 
-test("all 12 moves default to Medium (= v54 move) and show a B / M / X picker; every move has a distinct B and X", async () => {
+test("all 13 moves default to Medium (= v54 move) and show a B / M / X picker; every move has a distinct B and X", async () => {
   const app = await openMob();
   const p = app.page;
   const r = await p.evaluate(() => ({
@@ -30,12 +30,12 @@ test("all 12 moves default to Medium (= v54 move) and show a B / M / X picker; e
     variants: MOBILITY.map((m) => [mobilityDef(m.id, "B").name, mobilityDef(m.id, "X").name, m.name]),
     secs: routineSeconds(state.exercises),
   }));
-  assert.deepEqual(r.lv, Array(12).fill("M"));
+  assert.deepEqual(r.lv, Array(13).fill("M"));
   assert.equal(r.same, true, "Medium is exactly the v54 move");
-  assert.equal(r.secs, 800, "default routine length unchanged");
+  assert.equal(r.secs, 905, "default routine length unchanged");
   for (const [b, x, m] of r.variants) { assert.ok(b && x && b !== m && x !== m && b !== x, `${m} has its own B and X`); }
   const pickers = await p.$$eval(".mob-lvl", (els) => els.map((el) => [...el.querySelectorAll("button")].map((b) => b.textContent + (b.classList.contains("on") ? "*" : "")).join(" ")));
-  assert.equal(pickers.length, 12);
+  assert.equal(pickers.length, 13);
   assert.ok(pickers.every((s) => s === "B M* X"));
   assert.match(await card(p, "catcow"), /Medium/);
   // Not on lift days
@@ -76,17 +76,17 @@ test("timing changes only where Expert adds a hold; single-leg bridge runs each 
   const app = await openMob();
   const p = app.page;
   const r = await p.evaluate(() => {
-    for (let i = 0; i < 12; i++) setMobLevel(i, "B");
+    for (let i = 0; i < 13; i++) setMobLevel(i, "B");
     const b = state.exercises.map((e) => [e.id.slice(4), workSecFor(e), runSides(e), switchSecFor(e), e.reps]);
     const bSecs = routineSeconds(state.exercises);
-    for (let i = 0; i < 12; i++) setMobLevel(i, "X");
+    for (let i = 0; i < 13; i++) setMobLevel(i, "X");
     const x = state.exercises.map((e) => [e.id.slice(4), workSecFor(e), runSides(e), switchSecFor(e), e.reps]);
-    return { b, bSecs, x, xSecs: routineSeconds(state.exercises), label: targetLabel(state.exercises[4]) };
+    return { b, bSecs, x, xSecs: routineSeconds(state.exercises), label: targetLabel(state.exercises[5]) };
   });
-  assert.equal(r.bSecs, 800, "Beginner = same timings as v54");
-  assert.deepEqual(r.x, [["catcow", 65, 1, 0, 6], ["child", 30, 2, 10, 30], ["9090", 50, 1, 0, 8], ["hipflex", 30, 2, 10, 30], ["bridge", 20, 2, 10, 8],
+  assert.equal(r.bSecs, 800 + 85, "Beginner = v54 timings + psoas 30 s/side");
+  assert.deepEqual(r.x, [["catcow", 65, 1, 0, 6], ["child", 30, 2, 10, 30], ["9090", 50, 1, 0, 8], ["hipflex", 30, 2, 10, 30], ["psoas", 50, 2, 10, 8], ["bridge", 20, 2, 10, 8],
     ["fig4", 30, 2, 10, 30], ["deadbug", 60, 1, 0, 5], ["wgs", 25, 2, 10, 4], ["openbook", 40, 2, 10, 5], ["ankle", 35, 2, 10, 8], ["wallslide", 40, 1, 0, 10], ["squat", 30, 1, 0, 30]]);
-  assert.equal(r.xSecs, 800 + 25 + 10 + 20 + 30 + 20, "holds + single-leg bridge add time");
+  assert.equal(r.xSecs, 905 + 25 + 10 + 20 + 30 + 20 + 20, "holds + single-leg bridge add time");
   assert.equal(r.label, "8 each side");
   assert.match(await card(p, "bridge"), /20s per side/);
   assert.deepEqual(app.errors, []);
@@ -115,7 +115,7 @@ test("running panel shows the level name + its cue; bridge X runs side 1 → swi
   assert.match(panel, /Lying figure-4 stretch/); assert.match(panel, /Medium/);
   // The running move can't change level; a later one can
   await p.evaluate(() => window.__adv(Math.max(0, ui.run.endAt - Date.now()) + 50));
-  assert.equal(await p.evaluate(() => setMobLevel(5, "B")), false);
+  assert.equal(await p.evaluate(() => setMobLevel(6, "B")), false);
   assert.equal(await p.evaluate(() => setMobLevel(11, "B")), true);
   assert.deepEqual(app.errors, []);
   await app.close();
@@ -132,8 +132,8 @@ test("history records the level per move; Export → Import and sync carry the l
   const h = s.history[0];
   assert.equal(h.type, "mobility");
   assert.deepEqual(h.lifts.map((l) => [l.id.slice(4), l.level, l.name]), [["catcow", "B", "Cat-cow on forearms"], ["child", "M", "Child’s pose with side reach"], ["9090", "M", "90/90 hip switches"],
-    ["hipflex", "M", "Half-kneeling hip flexor stretch"], ["bridge", "X", "Single-leg glute bridge"], ["fig4", "M", "Lying figure-4 stretch"]]);
-  assert.equal(h.lifts[4].eachSide, true);
+    ["hipflex", "M", "Half-kneeling hip flexor stretch"], ["psoas", "M", "Seated psoas lift over roller"], ["bridge", "X", "Single-leg glute bridge"]]);
+  assert.equal(h.lifts[5].eachSide, true);
   assert.deepEqual(s.mobilityLevels, { "mob-catcow": "B", "mob-bridge": "X" }, "levels stay for next time");
   await p.waitForFunction(() => syncCfg.lastSync && !syncBusy, { timeout: 5000 });
   assert.deepEqual(app.net.posts[app.net.posts.length - 1].data.mobilityLevels, { "mob-catcow": "B", "mob-bridge": "X" });
@@ -147,7 +147,7 @@ test("history records the level per move; Export → Import and sync carry the l
   await dst.page.evaluate(() => importBackup());
   await input.uploadFile(file);
   await dst.page.waitForFunction(() => state.mobilityLevels?.["mob-bridge"] === "X", { timeout: 5000 });
-  assert.deepEqual(await dst.page.evaluate(() => { enterMobility(); return [state.exercises[0].name, state.exercises[4].name, state.exercises[4].bilateral]; }), ["Cat-cow on forearms", "Single-leg glute bridge", true]);
+  assert.deepEqual(await dst.page.evaluate(() => { enterMobility(); return [state.exercises[0].name, state.exercises[5].name, state.exercises[5].bilateral]; }), ["Cat-cow on forearms", "Single-leg glute bridge", true]);
   // Old backups (no levels) + junk → all Medium
   await dst.page.evaluate(() => { exitMobility(); applyBackup({ programId: "anvil", dayIndex: 0, history: [], liftProgress: {}, bodyWeightLog: [], mobilityLevels: { "mob-catcow": "Z", squat: "X", "mob-squat": "M", __proto__x: 1 } }); });
   assert.deepEqual(await dst.page.evaluate(() => [state.mobilityLevels, state.altExercises.every((e) => e.mobLevel === "M")]), [{}, true]);

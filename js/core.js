@@ -7,7 +7,7 @@ const ANVIL_PREVIEW = /\/(anvil-)?preview\//.test(location.pathname);
 const PREVIEW_PREFIX = "anvil-preview:";
 function K(key){ return ANVIL_PREVIEW ? PREVIEW_PREFIX + key : key; }
 const STORAGE = K("anvil_app_v3");
-const APP_VERSION = "anvil-v55";
+const APP_VERSION = "anvil-v56";
 const CUE_LOUDNESS = 2.4;
 const CUE_MAX_GAIN = 0.95;
 const SET_OPTS = [1,2,3,4,5];
@@ -398,6 +398,7 @@ const MOBILITY = [
   mob("child", "Child’s pose with side reach", 30, { timed: true, bilateral: true, note: "Hips back to heels, walk both hands to one side until the side of your back opens. Slow breaths." }),
   mob("9090", "90/90 hip switches", 8, { work: 50, bilateral: true, alternating: true, note: "Sit with both knees bent 90°. Rotate both knees to the other side; tall chest, hands behind for support if needed." }),
   mob("hipflex", "Half-kneeling hip flexor stretch", 30, { timed: true, bilateral: true, note: "Back knee down, squeeze that glute and tuck the pelvis, then shift forward a little. Don’t arch the lower back." }),
+  mob("psoas", "Seated psoas lift over roller", 10, { work: 40, bilateral: true, note: "Sit tall, hands behind for support, foam roller beside one knee. Lift the leg up and over the roller and back, slow and controlled." }),
   mob("bridge", "Glute bridge (2 s hold)", 10, { work: 40, note: "Feet flat, ribs down. Drive through the heels, squeeze the glutes, hold 2 s at the top, lower slowly." }),
   mob("fig4", "Lying figure-4 stretch", 30, { timed: true, bilateral: true, note: "On your back, ankle over the other knee. Pull the bottom thigh in until you feel the outer hip / glute." }),
   mob("deadbug", "Dead bug", 6, { work: 40, bilateral: true, alternating: true, note: "Lower back pressed into the floor. Slowly reach the opposite arm and leg long, exhale, return." }),
@@ -408,6 +409,9 @@ const MOBILITY = [
   mob("squat", "Deep squat hold", 30, { timed: true, note: "Sit into a deep squat, heels down, chest up. Hold a door frame or post for balance. 30–45 s." }),
 ];
 const MOBILITY_IDS = new Set(MOBILITY.map(m => m.id));
+/** v56 pose pictures, per move (not per level). Moves without one show text cues only. */
+const MOBILITY_IMG = { "mob-catcow": "catcow", "mob-hipflex": "hipflex", "mob-fig4": "fig4", "mob-deadbug": "deadbug", "mob-wallslide": "wallslide" };
+function mobImgSrc(id){ const f = MOBILITY_IMG[id]; return f ? "img/mobility/" + f + ".webp" : ""; }
 /** v55 per-move levels: B (Beginner) / M (Medium = the v53/v54 move) / X (Expert). Saved per profile in
  *  state.mobilityLevels { "mob-…": "B"|"X" } (M = not stored). A level swaps the name + cue; timing changes only where
  *  the Expert variant adds a hold/pause (and single-leg bridge runs each side, 20 s per side). Edits still lay over it. */
@@ -426,6 +430,9 @@ const MOBILITY_VARIANTS = {
   "mob-hipflex": {
     B: { name: "Half-kneeling hip flexor (hold a support)", note: "Hold a chair, bench or wall for balance. Back knee down, squeeze that glute, tuck the pelvis, shift forward a little." },
     X: { name: "Half-kneeling hip flexor + overhead side bend", note: "Back-knee side arm reaches overhead and bends away toward the front-leg side. Glute squeezed, pelvis tucked, ribs down." } },
+  "mob-psoas": {
+    B: { name: "Seated psoas lift (knee bent)", reps: 8, work: 30, note: "Sit tall, hands behind for support. Knee bent, small lift up and over the roller and back. About 8 reps per side." },
+    X: { name: "Seated psoas lift (straight leg, 2 s hold)", reps: 8, work: 50, note: "Leg straight. Lift up and over the roller, hold 2 s at the top, back. Sit taller and keep the hands light." } },
   "mob-bridge": {
     B: { name: "Glute bridge (small range)", note: "Feet flat, ribs down. Lift the hips only part way, squeeze the glutes, lower slowly. Stay in a pain-free range." },
     X: { name: "Single-leg glute bridge", reps: 8, work: 20, bilateral: true, note: "One foot flat, other knee hugged in or leg straight. Drive through the heel, hips level, squeeze at the top, lower slowly. Then switch sides." } },

@@ -96,6 +96,7 @@ function render(){
          ${weightCtrl}`
       : `${weightCtrl}`;
     const amrap = usesAmrap(ex);
+    const mobImg = ex.mobility && !ex.skipped && mobImgSrc(ex.id) ? `<img class="mob-img" src="${mobImgSrc(ex.id)}" alt="${esc(ex.name)} pose" width="600" height="450" loading="lazy" decoding="async">` : "";
     const sets = ex.skipped ? "" : `<div class="sets${tight?" tight":""}">${ex.setsLog.map((log,si) => {
       const shown = log.reps ?? ex.reps;
       const cls = log.ok ? "ok" : log.miss ? "miss" : log.half ? "half" : "";
@@ -133,6 +134,7 @@ function render(){
           ${titleBlock}
           <p class="meta">${esc(targetLabel(ex))}<br>${ex.mobility ? (ex.timed ? "Timed hold" : `Slow reps · ${workSecFor(ex)}s${runSides(ex) === 2 ? " per side" : ""}`) : isNeckIso(ex) ? (ex.reps >= neckMaxFor(ex) ? `Max ${neckMaxFor(ex)}s · ${ex.failStreak}/3 no-rep` : `+${neckStepFor(ex)}s next clean · max ${neckMaxFor(ex)}s`) : `${ex.streak}/3 clean · ${ex.failStreak}/3 no-rep`}${amrap?`<br><span style="opacity:.7;font-size:.65rem">Last set AMRAP · +2 → +${fmtStep(kgStepFor(ex))} kg</span>`:""}</p>
         </div>
+        ${mobImg}
         <div class="weight">${load}</div>
         ${isActive && !(ex.mobility && ui.run)?`<div class="rest-box${ui.restMode==="switch"?" switching":""}"><p class="switch-lab" data-switch-lab>${restModeLabel()}</p><p class="cue" data-cue>${loggedCue}</p><p class="big ${tClass}" data-timer style="font-size:3rem">${remainText}</p>
           <div class="split" style="justify-content:center;margin-top:.625rem"><button class="icon-btn" data-act="rest" data-d="-15" aria-label="Minus 15 seconds">−</button>
@@ -579,7 +581,7 @@ function renderRunPanel(){
   return `<div class="run-panel${r.phase === "switch" ? " switching" : r.phase === "next" ? " between" : ""}${r.paused ? " paused" : ""}" role="timer" aria-live="polite">
     <p class="run-cap" data-run-cap>${esc(r.paused ? "Paused · " + t.cap : t.cap)}</p>
     <p class="run-name">${esc(t.name)}</p>
-    <p class="run-time${left <= 3 ? " warn" : ""}" data-run-time>${fmtTime(left)}</p>
+    ${mobImgSrc(ex.id) ? `<div class="run-row"><img class="run-img" src="${mobImgSrc(ex.id)}" alt="${esc(ex.name)} pose" width="600" height="450" decoding="async"><p class="run-time${left <= 3 ? " warn" : ""}" data-run-time>${fmtTime(left)}</p></div>` : `<p class="run-time${left <= 3 ? " warn" : ""}" data-run-time>${fmtTime(left)}</p>`}
     <p class="note run-sub">Move ${pos}/${state.exercises.length} · ${esc(MOB_LEVEL_NAME[cleanMobLevel(ex.mobLevel)])} · ${esc(targetLabel(ex))}</p>
     ${ex.note ? `<p class="note run-cue">${esc(ex.note)}</p>` : ""}
     ${renderRunWhy()}

@@ -15,7 +15,7 @@ export const SYNC_HOST = "script.google.com";
 export const TEST_PIN = "2468"; // test-only PIN for the mock backend (never the real family PIN)
 
 const MIME = { ".html":"text/html", ".js":"text/javascript", ".mjs":"text/javascript", ".css":"text/css", ".json":"application/json",
-  ".png":"image/png", ".svg":"image/svg+xml", ".mp3":"audio/mpeg", ".webmanifest":"application/manifest+json" };
+  ".png":"image/png", ".webp":"image/webp", ".svg":"image/svg+xml", ".mp3":"audio/mpeg", ".webmanifest":"application/manifest+json" };
 
 export function startServer(root = ROOT){
   const box = { root };
@@ -174,7 +174,7 @@ export async function openApp(baseUrl, opts = {}){
 export function previewSite(opts = {}){
   const t = fs.mkdtempSync(path.join(os.tmpdir(), "anvil-site-"));
   for (const f of ["index.html", "sw.js", "manifest.json", "favicon.svg", "icon.svg", "icon-192.png", "icon-192-maskable.png", "icon-512.png", "icon-512-maskable.png"]) fs.copyFileSync(path.join(ROOT, f), path.join(t, f));
-  for (const d of ["css", "js", "sounds"]) fs.cpSync(path.join(ROOT, d), path.join(t, d), { recursive: true });
+  for (const d of ["css", "js", "sounds", "img"]) fs.cpSync(path.join(ROOT, d), path.join(t, d), { recursive: true });
   execFileSync(path.join(ROOT, "scripts", "make-preview.sh"), [path.join(t, "anvil-preview")], { stdio: "ignore" });
   fs.cpSync(path.join(ROOT, "preview"), path.join(t, "preview"), { recursive: true });
   if (opts.oldPreviewAt) execFileSync(path.join(ROOT, "scripts", "make-preview.sh"), [path.join(t, opts.oldPreviewAt)], { stdio: "ignore" });
