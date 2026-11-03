@@ -7,7 +7,7 @@ const ANVIL_PREVIEW = /\/(anvil-)?preview\//.test(location.pathname);
 const PREVIEW_PREFIX = "anvil-preview:";
 function K(key){ return ANVIL_PREVIEW ? PREVIEW_PREFIX + key : key; }
 const STORAGE = K("anvil_app_v3");
-const APP_VERSION = "anvil-v54";
+const APP_VERSION = "anvil-v55";
 const CUE_LOUDNESS = 2.4;
 const CUE_MAX_GAIN = 0.95;
 const SET_OPTS = [1,2,3,4,5];
@@ -408,6 +408,67 @@ const MOBILITY = [
   mob("squat", "Deep squat hold", 30, { timed: true, note: "Sit into a deep squat, heels down, chest up. Hold a door frame or post for balance. 30–45 s." }),
 ];
 const MOBILITY_IDS = new Set(MOBILITY.map(m => m.id));
+/** v55 per-move levels: B (Beginner) / M (Medium = the v53/v54 move) / X (Expert). Saved per profile in
+ *  state.mobilityLevels { "mob-…": "B"|"X" } (M = not stored). A level swaps the name + cue; timing changes only where
+ *  the Expert variant adds a hold/pause (and single-leg bridge runs each side, 20 s per side). Edits still lay over it. */
+const MOB_LEVELS = ["B", "M", "X"];
+const MOB_LEVEL_NAME = { B: "Beginner", M: "Medium", X: "Expert" };
+const MOBILITY_VARIANTS = {
+  "mob-catcow": {
+    B: { name: "Cat-cow on forearms", note: "Forearms and knees down (easier on wrists and shoulders). Slowly round the back up, then let the belly drop. Breathe with each rep." },
+    X: { name: "Cat-cow with 3 s holds", reps: 6, work: 65, note: "Hands and knees. Round all the way up and hold 3 s, then drop the belly, lift the chest and hold 3 s. One slow breath each end." } },
+  "mob-child": {
+    B: { name: "Child’s pose side reach (pillow under hips)", note: "Pillow or folded towel between heels and hips so you can relax into it. Walk both hands to one side, slow breaths." },
+    X: { name: "Child’s pose deep side reach", note: "Walk the hands further across and sink the hips back and down toward the heels. Breathe into the side of your back." } },
+  "mob-9090": {
+    B: { name: "90/90 switches (hands behind)", note: "Hands on the floor behind you for support. Rotate both knees to the other side, chest tall, slow and controlled." },
+    X: { name: "90/90 switches + back-knee lift", note: "Hands-free, tall chest. After each switch lift the back knee off the floor for a beat, lower, then switch." } },
+  "mob-hipflex": {
+    B: { name: "Half-kneeling hip flexor (hold a support)", note: "Hold a chair, bench or wall for balance. Back knee down, squeeze that glute, tuck the pelvis, shift forward a little." },
+    X: { name: "Half-kneeling hip flexor + overhead side bend", note: "Back-knee side arm reaches overhead and bends away toward the front-leg side. Glute squeezed, pelvis tucked, ribs down." } },
+  "mob-bridge": {
+    B: { name: "Glute bridge (small range)", note: "Feet flat, ribs down. Lift the hips only part way, squeeze the glutes, lower slowly. Stay in a pain-free range." },
+    X: { name: "Single-leg glute bridge", reps: 8, work: 20, bilateral: true, note: "One foot flat, other knee hugged in or leg straight. Drive through the heel, hips level, squeeze at the top, lower slowly. Then switch sides." } },
+  "mob-fig4": {
+    B: { name: "Figure-4 with foot on the wall", note: "Lie close to a wall, bottom foot flat on the wall, other ankle over that knee. Scoot closer to the wall to deepen." },
+    X: { name: "Seated figure-4 forward lean", note: "Sit tall, ankle over the other knee. Hinge forward from the hips with a long back until the outer hip / glute opens." } },
+  "mob-deadbug": {
+    B: { name: "Dead bug (arms only)", note: "Lower back pressed into the floor, knees up at 90°. Slowly lower one arm overhead at a time, exhale, return." },
+    X: { name: "Dead bug with 3 s pause", reps: 5, work: 60, note: "Lower back pressed into the floor. Reach the opposite arm and leg long, pause 3 s at full reach, exhale, return." } },
+  "mob-wgs": {
+    B: { name: "World’s greatest stretch (back knee down)", note: "Back knee down on a pad. Hand inside the front foot, rotate the other arm to the ceiling, eyes follow." },
+    X: { name: "World’s greatest stretch + hamstring rock-back", note: "Long lunge, rotate to the ceiling, then rock the hips back and straighten the front leg, toes up. Back into the lunge." } },
+  "mob-openbook": {
+    B: { name: "Open book (small arc)", note: "Side-lying, knees bent and stacked. Open the top arm only part way, eyes follow the hand, knees stay together." },
+    X: { name: "Open book with 3 s hold", reps: 5, work: 40, note: "Open fully, hold 3 s and take one slow breath into the chest, then return. Knees stay together." } },
+  "mob-ankle": {
+    B: { name: "Wall ankle rocks (close to the wall)", note: "Toes close to the wall. Drive the knee to the wall, heel stays down. Small, easy range." },
+    X: { name: "Wall ankle rocks (10 cm out, pause)", reps: 8, work: 35, note: "Foot about 10 cm from the wall. Drive the knee to the wall, pause 2 s at the end, heel stays down." } },
+  "mob-wallslide": {
+    B: { name: "Wall slides (short range)", note: "Back, head and arms on the wall. Slide up only as far as the arms stay on the wall, ribs down." },
+    X: { name: "Wall slides (off the wall)", note: "Take a small step away from the wall and do the same slide with no wall support. Ribs down, arms in line, slow." } },
+  "mob-squat": {
+    B: { name: "Deep squat hold (hold a post)", note: "Hold a post or door frame and sit into a deep squat. Use it to stay upright; heels down if you can." },
+    X: { name: "Deep squat with prying shift", note: "In the bottom, elbows inside the knees. Slowly shift side to side and pry the knees open. Heels down, chest up." } },
+};
+function cleanMobLevel(l){ return MOB_LEVELS.includes(l) ? l : "M"; }
+/** Only valid moves with a non-Medium level are kept (Medium is the default). */
+function sanitizeMobLevels(o){
+  const out = {};
+  if (!o || typeof o !== "object" || Array.isArray(o)) return out;
+  for (const [id, l] of Object.entries(o)) if (MOBILITY_IDS.has(id) && (l === "B" || l === "X")) out[id] = l;
+  return out;
+}
+function mobLevelFor(id, levels){
+  const all = levels !== undefined ? levels : (typeof state !== "undefined" ? state?.mobilityLevels : null);
+  return cleanMobLevel(all?.[id]);
+}
+/** The move as defined for a level (Medium = the base move). */
+function mobilityDef(id, level){
+  const m = MOBILITY.find(x => x.id === id); if (!m) return null;
+  const l = cleanMobLevel(level);
+  return { ...m, ...(l === "M" ? {} : (MOBILITY_VARIANTS[id]?.[l] || {})), mobLevel: l };
+}
 const RUN_LEAD_IN = 5; // "Get ready" before the first move
 /** Work time for one side of a move: timed moves = their seconds; rep moves = their work timer (edit: workSec). */
 function workSecFor(ex){
@@ -584,7 +645,7 @@ function exerciseDefault(pid, id){
   const prog = getProgram(pid);
   for (const d of prog.days) { const e = d.exercises.find(x => x.id === id); if (e) return e; }
   for (const g of LIBRARY) { const e = g.lifts.find(x => x.id === id); if (e) return e; }
-  { const m = MOBILITY.find(x => x.id === id); if (m) return m; }
+  if (MOBILITY_IDS.has(id)) return mobilityDef(id, mobLevelFor(id));
   for (const p of PROGRAMS) for (const d of p.days) { const e = d.exercises.find(x => x.id === id); if (e) return e; }
   return null;
 }
@@ -724,12 +785,13 @@ const I = {
 };
 
 /** Fresh mobility list (edits laid over), or the saved one merged onto it (targets, in-progress taps, skips kept). */
-function mobilitySeed(edits){ return MOBILITY.map(m => applyEdits(toExercise(m), "anvil", edits)); }
-function hydrateMobility(raw, edits){
+function mobilityMove(id, edits, levels){ return applyEdits(toExercise(mobilityDef(id, mobLevelFor(id, levels))), "anvil", edits); }
+function mobilitySeed(edits, levels){ return MOBILITY.map(m => mobilityMove(m.id, edits, levels)); }
+function hydrateMobility(raw, edits, levels){
   const saved = Object.fromEntries((Array.isArray(raw) ? raw : []).filter(e => e && typeof e.id === "string").map(e => [e.id, e]));
-  return mobilitySeed(edits).map(ex => {
+  return mobilitySeed(edits, levels).map(ex => {
     const e = saved[ex.id];
-    if (!e) return ex;
+    if (!e || cleanMobLevel(e.mobLevel) !== ex.mobLevel) return ex; // level changed since → fresh move at the new level
     const n = Number(e.reps);
     let out = {...ex, reps: Number.isInteger(n) && n > 0 && n <= 600 ? n : ex.reps};
     if (Array.isArray(e.setsLog) && e.setsLog.length === out.sets) out.setsLog = e.setsLog.map(s => ({ok:!!s?.ok, miss:!!s?.miss, ...(Number.isFinite(s?.reps) ? {reps:s.reps} : {}), ...(s?.half ? {half:true} : {})}));

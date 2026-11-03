@@ -44,6 +44,7 @@ document.getElementById("app").addEventListener("click", (e) => {
     setDay(d); stopRest(); render();
   }
   else if (act==="mobility") enterMobility();
+  else if (act==="mob-level") setMobLevel(+btn.dataset.i, btn.dataset.l);
   else if (act==="run-start") startRoutine();
   else if (act==="run-pause") runPauseToggle();
   else if (act==="run-skip") runSkip();

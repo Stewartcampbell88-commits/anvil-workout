@@ -888,7 +888,7 @@ function logMobility(){
     }
     if (!ex.setsLog.some(s => s.ok || s.miss)) continue;
     const sets = ex.setsLog.map(s => ({ ok: !!s.ok, miss: !!s.miss, reps: s.reps ?? null }));
-    lifts.push({ id: ex.id, name: ex.name, weight: 0, reps: ex.reps, clean: sets.every(s => s.ok), sets, ...(ex.timed ? { unit: "s" } : {}), ...(ex.bilateral ? { eachSide: true } : {}) });
+    lifts.push({ id: ex.id, name: ex.name, weight: 0, reps: ex.reps, clean: sets.every(s => s.ok), sets, level: cleanMobLevel(ex.mobLevel), ...(ex.timed ? { unit: "s" } : {}), ...(ex.bilateral ? { eachSide: true } : {}) });
   }
   const timing = workoutTiming();
   notes.unshift(`Mobility: ${lifts.length}/${state.exercises.length} moves${skips.length ? ` · ${skips.length} skipped` : ""}${timing ? ` · ${fmtDurMin(timing.durationSec)}` : ""}`);
@@ -901,6 +901,24 @@ function logMobility(){
   newLocalActivity();
   syncSoon();
   return entry;
+}
+/** v55: pick a move's level (B / M / X). Saved per profile; the move is rebuilt at that level (edits still laid over).
+ *  Not once the move has been started (tapped, holding, or the routine is working on it) — the log has to match the level. */
+function setMobLevel(ei, level){
+  const ex = state.exercises[ei];
+  if (!state.mobile || !ex?.mobility || !MOB_LEVELS.includes(level)) return false;
+  if (cleanMobLevel(ex.mobLevel) === level) return true;
+  const busy = (ex.setsLog || []).some(s => s.ok || s.miss || s.half) || (ui.hold && ui.hold.ei === ei)
+    || (runActive() && ui.run.ei === ei && ui.run.phase !== "next");
+  if (busy) { toast("Change the level before you start this move", "Or Reset to clear it"); return false; }
+  const levels = sanitizeMobLevels(state.mobilityLevels);
+  if (level === "M") delete levels[ex.id]; else levels[ex.id] = level;
+  state.mobilityLevels = levels;
+  const fresh = mobilityMove(ex.id, state.exerciseEdits, levels);
+  const keep = ex.skipped ? { skipped: true, ...(ex.skipReason ? { skipReason: ex.skipReason } : {}), ...(ex.skipNote ? { skipNote: ex.skipNote } : {}) } : {};
+  state.exercises = state.exercises.map((e, i) => i === ei ? { ...fresh, ...keep } : e);
+  save(); render();
+  return true;
 }
 function onLogMobility(){
   if (state.exercises.some(ex => !ex.skipped && ex.setsLog.some(s => s.ok || s.miss || s.half) && !ex.setsLog.every(s => s.ok || s.miss))) { toast("Finish or skip the moves you started"); return; }

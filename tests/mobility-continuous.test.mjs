@@ -12,6 +12,7 @@ const dayA = () => stewartState({ dayIndex: 0, anvilXrdlV49: true, neckIsoV50: t
 /** Open the app in Mobility with a controllable clock, cue spies and a fake wake lock. */
 async function openMob(){
   const app = await openApp(srv.url, { storage: { [KEYS.STATE]: dayA() } });
+  await app.page.setViewport({ width: 390, height: 844 }); // phone size (v55 panel shows the cue line, cards a level picker)
   await app.page.evaluate(() => {
     const real = Date.now.bind(Date); window.__off = 0; Date.now = () => real() + window.__off;
     window.__adv = (ms) => { window.__off += ms; runTick(); };

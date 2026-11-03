@@ -11,6 +11,7 @@ let state = {
   cuePack: "chime",
   loudCuesV33: true,
   exerciseEdits: {},
+  mobilityLevels: {},     // v55: per-move Mobility level { "mob-…": "B"|"X" } (Medium not stored)
   mobile: false,          // v53: ANVIL Mobility session is on screen (state.exercises = mobility moves)
   altExercises: [],       // the list that's NOT on screen (mobility moves, or the A/B lifts while mobile)
 };
@@ -73,6 +74,7 @@ function load(){
     const dayIndex = Math.min(Math.max(0, raw.dayIndex||0), program.days.length-1);
     let liftProgress = raw.liftProgress || {};
     const exerciseEdits = sanitizeEdits(raw.exerciseEdits);
+    const mobilityLevels = sanitizeMobLevels(raw.mobilityLevels);
     // Snap odd ANVIL/EMBER targets (e.g. stuck 7 → 8) in saved progress
     if (program.id === "anvil" || program.id === "ember" || program.id === "titan") {
       const snapped = {};
@@ -180,8 +182,9 @@ function load(){
       cuePack: normalizeCuePack(raw.cuePack),
       loudCuesV33: true,
       exerciseEdits,
+      mobilityLevels,
       mobile: false,
-      altExercises: hydrateMobility(raw.mobility?.exercises, exerciseEdits),
+      altExercises: hydrateMobility(raw.mobility?.exercises, exerciseEdits, mobilityLevels),
     };
     if (normalizeWaveTargets() || needsCueMigration || layoutChanged || xrdlChanged || neckChanged) save();
     // Re-open Mobility if the app was closed mid-mobility (ANVIL only)
@@ -204,6 +207,7 @@ function saveState(){
     mobility: mobilityBlob(),
     loudCuesV33: true, anvilLayoutV38: true, anvilXrdlV49: true, neckIsoV50: true,
     exerciseEdits: sanitizeEdits(state.exerciseEdits),
+    mobilityLevels: sanitizeMobLevels(state.mobilityLevels),
   }));
 }
 
@@ -216,7 +220,7 @@ function swapMobility(on){
   if (!!state.mobile === !!on) return;
   if (typeof stopRoutine === "function") stopRoutine();
   const shown = state.exercises;
-  state.exercises = (state.altExercises && state.altExercises.length) ? state.altExercises : (on ? mobilitySeed(state.exerciseEdits) : seedProgram(state.programId, state.dayIndex));
+  state.exercises = (state.altExercises && state.altExercises.length) ? state.altExercises : (on ? mobilitySeed(state.exerciseEdits, state.mobilityLevels) : seedProgram(state.programId, state.dayIndex));
   state.altExercises = shown;
   state.mobile = !!on;
 }
@@ -229,6 +233,7 @@ function backupPayload(){
     mobility: mobilityBlob(),
     loudCuesV33: true,
     exerciseEdits: sanitizeEdits(state.exerciseEdits),
+    mobilityLevels: sanitizeMobLevels(state.mobilityLevels),
   };
 }
 
@@ -381,6 +386,7 @@ function applyBackup(raw){
         cuePack: normalizeCuePack(raw.cuePack),
         loudCuesV33: true,
         exerciseEdits: sanitizeEdits(raw.exerciseEdits), // older backups have none → {}
+        mobilityLevels: sanitizeMobLevels(raw.mobilityLevels), // v55; older backups have none → all Medium
         ...(raw.mobility && typeof raw.mobility === "object" && Array.isArray(raw.mobility.exercises) ? { mobility: { active: raw.mobility.active === true, exercises: raw.mobility.exercises } } : {}),
       }));
       if (Array.isArray(raw.walks)) {

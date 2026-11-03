@@ -81,8 +81,11 @@ function render(){
            <span class="kg${wNeg?" neg":""}">${fmtKg(ex.weight)}</span>
            <button class="icon-btn" data-act="weight" data-i="${ei}" data-d="${kgStepFor(ex)}" aria-label="Increase weight">${I.plus}</button>
            <span class="muted" style="font-size:.875rem">${wNeg?"kg assist":"kg"}</span>`;
+    const mobPick = ex.mobility && !ex.skipped
+      ? `<div class="mob-lvl" role="group" aria-label="Level: ${esc(MOB_LEVEL_NAME[cleanMobLevel(ex.mobLevel)])}">${MOB_LEVELS.map(l => `<button type="button" class="${cleanMobLevel(ex.mobLevel) === l ? "on" : ""}" data-act="mob-level" data-i="${ei}" data-l="${l}" aria-pressed="${cleanMobLevel(ex.mobLevel) === l}" aria-label="${MOB_LEVEL_NAME[l]}">${l}</button>`).join("")}<span class="mob-lvl-name">${esc(MOB_LEVEL_NAME[cleanMobLevel(ex.mobLevel)])}</span></div>`
+      : "";
     const load = ex.mobility
-      ? `<span class="muted" style="font-size:.875rem">${ui.run && ui.run.phase !== "done" && ui.run.ei === ei ? "Routine running — timer above runs this move · tap it to finish early" : ex.timed ? `Tap to start the ${esc(String(ex.reps))}s hold — cues at 3-2-1${ex.bilateral ? ", then switch sides" : ""}` : `Tap when done${ex.bilateral ? " — tap after side 1, again after side 2" : ""}`} · no kg</span>`
+      ? `${mobPick}<span class="muted" style="font-size:.875rem">${ui.run && ui.run.phase !== "done" && ui.run.ei === ei ? "Routine running — timer above runs this move · tap it to finish early" : ex.timed ? `Tap to start the ${esc(String(ex.reps))}s hold — cues at 3-2-1${ex.bilateral ? ", then switch sides" : ""}` : `Tap when done${ex.bilateral ? " — tap after side 1, again after side 2" : ""}`} · no kg</span>`
       : isNeckIso(ex)
       ? `<span class="muted" style="font-size:.875rem">Forward → left → back → right · ${esc(String(ex.reps))}s each · no kg</span>`
       : ex.levels?.length
@@ -577,7 +580,8 @@ function renderRunPanel(){
     <p class="run-cap" data-run-cap>${esc(r.paused ? "Paused · " + t.cap : t.cap)}</p>
     <p class="run-name">${esc(t.name)}</p>
     <p class="run-time${left <= 3 ? " warn" : ""}" data-run-time>${fmtTime(left)}</p>
-    <p class="note run-sub">Move ${pos}/${state.exercises.length} · ${esc(targetLabel(ex))}</p>
+    <p class="note run-sub">Move ${pos}/${state.exercises.length} · ${esc(MOB_LEVEL_NAME[cleanMobLevel(ex.mobLevel)])} · ${esc(targetLabel(ex))}</p>
+    ${ex.note ? `<p class="note run-cue">${esc(ex.note)}</p>` : ""}
     ${renderRunWhy()}
     <div class="run-ctl"><button data-act="run-back" aria-label="Back">◀︎ Back</button><button class="primary" data-act="run-pause">${r.paused ? "▶ Resume" : "❚❚ Pause"}</button><button data-act="run-skip" aria-label="Skip move">Skip ▶︎</button></div>
     <div class="run-ctl"><button data-act="run-adj" data-d="-15" aria-label="Minus 15 seconds">−15 s</button><button data-act="run-adj" data-d="15" aria-label="Plus 15 seconds">+15 s</button><button data-act="run-stop">Stop</button></div>
