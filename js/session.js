@@ -145,6 +145,7 @@ function resetChecks(){
   save(); render();
 }
 function setProgram(id, dayIndex=0){
+  if (state.mobile) { swapMobility(false); stopRest(); }
   const program = getProgram(id);
   const day = Math.min(Math.max(0, dayIndex), program.days.length-1);
   const progress = captureProgress(state.exercises, state.liftProgress);
@@ -154,6 +155,7 @@ function setProgram(id, dayIndex=0){
   save(); render();
 }
 function setDay(dayIndex){
+  if (state.mobile) { swapMobility(false); stopRest(); }
   const program = getProgram(state.programId);
   const day = Math.min(Math.max(0, dayIndex), program.days.length-1);
   const progress = captureProgress(state.exercises, state.liftProgress);
@@ -524,18 +526,18 @@ function restLeft(){ return Math.max(0, Math.ceil((restEndAt - Date.now()) / 100
 function restTick(){
   if (!ui.running || !restEndAt) return;
   const r = restLeft();
-  if (r <= 0) { clearTick(); restEndAt = 0; cueGo(); return; }
+  if (r <= 0) { clearTick(); restEndAt = 0; onTimerEnd(); return; }
   if ((r===3||r===2||r===1) && lastCue !== r) { lastCue = r; cueCountdown(r); if (navigator.vibrate) navigator.vibrate(80); }
   if (r !== remainVal) { remainVal = r; ui.remain = r; renderTimerOnly(); }
 }
 function startRest(sec, mode){
   clearTick(); lastCue = -1; ui.isGo = false; remainVal = sec; ui.remain = sec; ui.running = true;
-  ui.restMode = mode === "switch" ? "switch" : "rest";
+  ui.restMode = (mode === "switch" || mode === "hold") ? mode : "rest";
   restEndAt = Date.now() + sec * 1000;
   render();
   tick = setInterval(restTick, 250);
 }
-function stopRest(){ clearTick(); restEndAt = 0; ui.running=false; ui.remain=0; remainVal=0; ui.isGo=false; ui.restMode="rest"; }
+function stopRest(){ clearTick(); restEndAt = 0; ui.running=false; ui.remain=0; remainVal=0; ui.isGo=false; ui.restMode="rest"; ui.hold=null; }
 function adjustRest(d){
   if (ui.running && tick && restEndAt) {
     const next = Math.max(5, restLeft() + d);
@@ -578,6 +580,16 @@ function onMark(ei, si){
   const ex0 = state.exercises[ei];
   const before = ex0.setsLog[si];
   const starting = !before.ok && !before.miss;
+  // v53 timed mobility move: tap starts the hold countdown (tap again during it = done now)
+  if (ex0.mobility && ex0.timed && !ex0.skipped) {
+    const h = ui.hold;
+    if (h && h.ei === ei && h.si === si && ui.running && (ui.restMode === "hold" || ui.restMode === "switch")) {
+      clearTick(); restEndAt = 0;
+      if (ui.restMode === "hold") advanceHold(); else startHold(ei, si, 2);
+      return;
+    }
+    if (starting) { clockNoteSet(); startHold(ei, si, before.half ? 2 : 1); return; }
+  }
   const sw = switchSecFor(ex0);
   if (starting && !before.half && sw > 0 && !ex0.skipped) {
     markHalf(ei, si);
@@ -591,6 +603,7 @@ function onMark(ei, si){
   if (justFinished) scheduleJumpToNextIncomplete();
 }
 function onLog(){
+  if (state.mobile) return onLogMobility();
   const startedOpen = state.exercises.some(ex => {
     if (ex.skipped) return false;
     const touched = ex.setsLog.some(s => s.ok || s.miss || s.half);
@@ -669,6 +682,7 @@ function skipBodyWeight(){
 /** What the Edit sheet shows for this lift. */
 function editKind(ex){
   const timed = isPlankSeconds(ex), neck = isNeckIso(ex);
+  if (ex.mobility) return { neck:false, timed, ladder:false, wave:false, kg:false, kgStep:false, range:false, names:true, switch: !!ex.bilateral, mobility:true };
   return {
     neck, timed,
     ladder: isStageLadder(ex),
@@ -795,10 +809,94 @@ function saveExerciseEdit(){
   if (k.neck) reps = Math.max(NECK_START, Math.min(neckMaxFor(next), reps));
   next.reps = Math.max(1, reps);
   state.exercises = state.exercises.map((e, i) => i === ei ? next : e);
-  state.liftProgress = captureProgress(state.exercises, state.liftProgress);
+  if (!ex.mobility) state.liftProgress = captureProgress(state.exercises, state.liftProgress);
   ui.editEx = null; ui.panel = "none";
   save();
   toast(`${next.name} saved`, clean ? "Your settings" : "Program defaults");
   render();
   return true;
+}
+
+// ---- v53 ANVIL Mobility session (own list; never touches Day A/B, liftProgress, wave, streaks or balance chain) ----
+function sessionStarted(exs){ return (exs || []).some(e => (e.setsLog || []).some(s => s.ok || s.miss || s.half)); }
+function enterMobility(){
+  if (state.programId !== "anvil" || state.mobile) return state.mobile;
+  if (sessionStarted(state.exercises)) { toast("Log or Reset this session first", "Then open Mobility"); return false; }
+  stopRest(); swapMobility(true); clearExpandedEx(); ui.panel = "none";
+  save(); render(); try { window.scrollTo(0, 0); } catch {}
+  return true;
+}
+function exitMobility(){
+  if (!state.mobile) return true;
+  if (sessionStarted(state.exercises)) { toast("Log or Reset Mobility first"); return false; }
+  stopRest(); swapMobility(false); clearExpandedEx(); ui.panel = "none";
+  save(); render();
+  return true;
+}
+/** Timed hold (side 1 / 2) for a mobility move: countdown with the usual 3-2-1 cues. */
+function startHold(ei, si, side){
+  const ex = state.exercises[ei]; if (!ex) return;
+  startRest(Math.max(1, Number(ex.reps) || 1), "hold");
+  ui.hold = { ei, si, side };
+  renderTimerOnly();
+  cueHoldStart();
+  if (navigator.vibrate) navigator.vibrate(60);
+}
+/** Hold finished (or tapped early): side 1 → switch sides → side 2 hold; last side → set done + short rest. */
+function advanceHold(){
+  const h = ui.hold; ui.hold = null;
+  const ex = h && state.exercises[h.ei];
+  if (!ex) { cueGo(); return; }
+  cueComplete();
+  if (ex.bilateral && h.side === 1) {
+    markHalf(h.ei, h.si);
+    const sw = switchSecFor(ex);
+    if (sw > 0) { startRest(sw, "switch"); ui.hold = { ei: h.ei, si: h.si, side: 2 }; renderTimerOnly(); cueSwitch(); if (navigator.vibrate) navigator.vibrate([120,60,120]); }
+    else startHold(h.ei, h.si, 2);
+    return;
+  }
+  const justFinished = markSet(h.ei, h.si);
+  if (ex.rest > 0) startRest(ex.rest); else { stopRest(); render(); }
+  if (justFinished) scheduleJumpToNextIncomplete();
+}
+function onTimerEnd(){
+  const h = ui.hold;
+  if (h && ui.restMode === "hold") { advanceHold(); return; }
+  if (h && ui.restMode === "switch" && h.side === 2 && state.exercises[h.ei]?.timed) { startHold(h.ei, h.si, 2); return; }
+  cueGo();
+}
+/** Log Mobility: history entry type "mobility" (moves in lifts[] so the Sheet's Sessions tab lists them as day "Mobility"). */
+function logMobility(){
+  const lifts = [], skips = [], notes = [];
+  for (const ex of state.exercises) {
+    if (ex.skipped) {
+      const why = skipReasonText(ex.skipReason, ex.skipNote);
+      notes.push(why ? `${ex.name}: Skipped: ${why}` : `${ex.name}: skipped`);
+      const r = skipReasonId(ex.skipReason), n = cleanSkipNote(ex.skipNote);
+      skips.push({ id: ex.id, name: ex.name, ...(r ? { reason: r, reasonText: why } : {}), ...(r === "other" && n ? { note: n } : {}) });
+      continue;
+    }
+    if (!ex.setsLog.some(s => s.ok || s.miss)) continue;
+    const sets = ex.setsLog.map(s => ({ ok: !!s.ok, miss: !!s.miss, reps: s.reps ?? null }));
+    lifts.push({ id: ex.id, name: ex.name, weight: 0, reps: ex.reps, clean: sets.every(s => s.ok), sets, ...(ex.timed ? { unit: "s" } : {}), ...(ex.bilateral ? { eachSide: true } : {}) });
+  }
+  const timing = workoutTiming();
+  notes.unshift(`Mobility: ${lifts.length}/${state.exercises.length} moves${skips.length ? ` · ${skips.length} skipped` : ""}${timing ? ` · ${fmtDurMin(timing.durationSec)}` : ""}`);
+  const entry = { date: new Date().toISOString(), programId: "anvil", type: "mobility", day: "Mobility", notes, lifts, ...(skips.length ? { skips } : {}), ...(timing || {}) };
+  state.history = [entry, ...state.history].slice(0, HISTORY_MAX);
+  state.exercises = state.exercises.map(({ skipReason, skipNote, ...ex }) => ({ ...ex, skipped: false, setsLog: blankSets(ex.sets) }));
+  clockClear();
+  swapMobility(false); clearExpandedEx();
+  save();
+  newLocalActivity();
+  syncSoon();
+  return entry;
+}
+function onLogMobility(){
+  if (state.exercises.some(ex => !ex.skipped && ex.setsLog.some(s => s.ok || s.miss || s.half) && !ex.setsLog.every(s => s.ok || s.miss))) { toast("Finish or skip the moves you started"); return; }
+  if (!state.exercises.some(ex => !ex.skipped && ex.setsLog.some(s => s.ok || s.miss))) { toast("Do a move first — blank moves are skipped"); return; }
+  stopRest();
+  const e = logMobility();
+  toast("Mobility logged", e.notes[0].replace(/^Mobility: /, ""));
+  render();
 }

@@ -7,7 +7,7 @@ const ANVIL_PREVIEW = /\/(anvil-)?preview\//.test(location.pathname);
 const PREVIEW_PREFIX = "anvil-preview:";
 function K(key){ return ANVIL_PREVIEW ? PREVIEW_PREFIX + key : key; }
 const STORAGE = K("anvil_app_v3");
-const APP_VERSION = "anvil-v52";
+const APP_VERSION = "anvil-v53";
 const CUE_LOUDNESS = 2.4;
 const CUE_MAX_GAIN = 0.95;
 const SET_OPTS = [1,2,3,4,5];
@@ -77,6 +77,7 @@ const NECK_START = 5, NECK_STEP = 5, NECK_MAX = 20;
 const NECK_NOTE = "2 rounds: hold forward → left → back → right against your hand. Seconds per direction, not reps. Gentle push, no movement.";
 function isNeckIso(ex){ return !!ex && (!!ex.neckIso || NECK_IDS.has(ex.id)); }
 function isPlankSeconds(ex){
+  if (ex?.mobility) return !!ex.timed;
   if (isNeckIso(ex)) return true;
   // Heave ladder: only Dead hang is timed — stage notes for negatives mention "seconds" of lowering, not hold time
   if (isHeaveLadder(ex)) return !!heaveStage(ex).seconds;
@@ -104,6 +105,7 @@ function fmtKg(w){
 }
 function usesAmrap(ex){
   if (!ex || (ex.sets ?? 0) < 2) return false;
+  if (ex.mobility) return false;
   if (isPlankSeconds(ex)) return false;
   if (ex.finisher) return false;
   if (isHeaveLadder(ex) && (ex.levelIndex ?? 0) < HEAVE_STAGES.length - 1) return false;
@@ -387,6 +389,25 @@ const LIBRARY = [
   ]},
 ];
 
+/** v53 ANVIL Mobility: its own session (not a Day A/B lift day). ~15 min full body, extra hips + lower back.
+ *  Ids are "mob-*" so they never meet liftProgress, the kg wave or the balance chain. 1 set each, no kg. */
+const MOBILITY_NOTE = "Pain-free, slow, no bouncing. Ease off anything that pinches.";
+function mob(id, name, reps, extra = {}){ return { id: "mob-" + id, name, sets: 1, reps, rest: 15, weight: 0, bw: true, mobility: true, block: "Mobility", ...extra }; }
+const MOBILITY = [
+  mob("catcow", "Cat-cow", 8, { note: "Hands and knees. Slowly round the whole back up, then let the belly drop and chest lift. Breathe with each rep." }),
+  mob("child", "Child’s pose with side reach", 30, { timed: true, bilateral: true, note: "Hips back to heels, walk both hands to one side until the side of your back opens. Slow breaths." }),
+  mob("9090", "90/90 hip switches", 8, { bilateral: true, note: "Sit with both knees bent 90°. Rotate both knees to the other side; tall chest, hands behind for support if needed." }),
+  mob("hipflex", "Half-kneeling hip flexor stretch", 30, { timed: true, bilateral: true, note: "Back knee down, squeeze that glute and tuck the pelvis, then shift forward a little. Don’t arch the lower back." }),
+  mob("bridge", "Glute bridge (2 s hold)", 10, { note: "Feet flat, ribs down. Drive through the heels, squeeze the glutes, hold 2 s at the top, lower slowly." }),
+  mob("fig4", "Lying figure-4 stretch", 30, { timed: true, bilateral: true, note: "On your back, ankle over the other knee. Pull the bottom thigh in until you feel the outer hip / glute." }),
+  mob("deadbug", "Dead bug", 6, { bilateral: true, note: "Lower back pressed into the floor. Slowly reach the opposite arm and leg long, exhale, return." }),
+  mob("wgs", "World’s greatest stretch", 4, { bilateral: true, note: "Long lunge, hand inside the front foot, rotate the other arm to the ceiling. Back knee down if needed." }),
+  mob("openbook", "Thoracic open book", 6, { bilateral: true, note: "Lie on your side, knees bent and stacked. Open the top arm across, eyes follow the hand, knees stay together." }),
+  mob("ankle", "Wall ankle rocks", 10, { bilateral: true, note: "Foot a hand-width from the wall. Drive the knee toward the wall, heel stays down. Inch back as it gets easy." }),
+  mob("wallslide", "Wall slides", 10, { note: "Back, head and arms on the wall. Slide the arms up and down slowly, ribs down, lower back gently flat." }),
+  mob("squat", "Deep squat hold", 30, { timed: true, note: "Sit into a deep squat, heels down, chest up. Hold a door frame or post for balance. 30–45 s." }),
+];
+const MOBILITY_IDS = new Set(MOBILITY.map(m => m.id));
 function getProgram(id){ return PROGRAMS.find(p=>p.id===id) || PROGRAMS[0]; }
 function blankSets(n){ return Array.from({length:n},()=>({ok:false,miss:false})); }
 function toExercise(d){
@@ -548,6 +569,7 @@ function exerciseDefault(pid, id){
   const prog = getProgram(pid);
   for (const d of prog.days) { const e = d.exercises.find(x => x.id === id); if (e) return e; }
   for (const g of LIBRARY) { const e = g.lifts.find(x => x.id === id); if (e) return e; }
+  { const m = MOBILITY.find(x => x.id === id); if (m) return m; }
   for (const p of PROGRAMS) for (const d of p.days) { const e = d.exercises.find(x => x.id === id); if (e) return e; }
   return null;
 }
@@ -649,11 +671,16 @@ function scheduleJumpToNextIncomplete(){
 }
 function fmtTime(sec){ const s=Math.max(0,Math.floor(sec)); return `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`; }
 function targetLabel(ex){
+  if (ex?.mobility) {
+    const t = ex.timed ? `${ex.reps}s` : `${ex.reps}${ex.bilateral ? "" : " reps"}`;
+    return `${ex.sets > 1 ? `${ex.sets} × ` : ""}${t}${ex.bilateral ? " each side" : ""}`;
+  }
   if (isNeckIso(ex)) return `${ex.sets} × 4-way · ${ex.reps}s each`;
   const unit = isPlankSeconds(ex) ? "s" : "";
   return ex.bilateral ? `${ex.sets} × ${ex.reps}${unit} each` : `${ex.sets} × ${ex.reps}${unit}`;
 }
 function maxRep(ex){
+  if (ex?.mobility) return ex.timed ? Math.max(ex.reps || 0, 180) : Math.max(ex.reps || 0, 30);
   if (isNeckIso(ex)) return Math.max(ex.reps || 0, neckMaxFor(ex), 60);
   if (ex.nocap) return 50;
   if (ex.cap) return ex.cap;
@@ -680,3 +707,18 @@ const I = {
   walk: `<svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><path d="M10 22l2-7 2 3 3 2"/><path d="M9 10l3 2 2-3 3 1"/></svg>`,
   workout: `<svg viewBox="0 0 24 24"><path d="M6.5 6.5v11"/><path d="M17.5 6.5v11"/><path d="M4 9v6"/><path d="M20 9v6"/><path d="M6.5 12h11"/></svg>`,
 };
+
+/** Fresh mobility list (edits laid over), or the saved one merged onto it (targets, in-progress taps, skips kept). */
+function mobilitySeed(edits){ return MOBILITY.map(m => applyEdits(toExercise(m), "anvil", edits)); }
+function hydrateMobility(raw, edits){
+  const saved = Object.fromEntries((Array.isArray(raw) ? raw : []).filter(e => e && typeof e.id === "string").map(e => [e.id, e]));
+  return mobilitySeed(edits).map(ex => {
+    const e = saved[ex.id];
+    if (!e) return ex;
+    const n = Number(e.reps);
+    let out = {...ex, reps: Number.isInteger(n) && n > 0 && n <= 600 ? n : ex.reps};
+    if (Array.isArray(e.setsLog) && e.setsLog.length === out.sets) out.setsLog = e.setsLog.map(s => ({ok:!!s?.ok, miss:!!s?.miss, ...(Number.isFinite(s?.reps) ? {reps:s.reps} : {}), ...(s?.half ? {half:true} : {})}));
+    if (e.skipped) { out.skipped = true; if (skipReasonId(e.skipReason)) { out.skipReason = e.skipReason; if (cleanSkipNote(e.skipNote)) out.skipNote = cleanSkipNote(e.skipNote); } }
+    return out;
+  });
+}

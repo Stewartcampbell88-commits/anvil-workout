@@ -11,6 +11,8 @@ let state = {
   cuePack: "chime",
   loudCuesV33: true,
   exerciseEdits: {},
+  mobile: false,          // v53: ANVIL Mobility session is on screen (state.exercises = mobility moves)
+  altExercises: [],       // the list that's NOT on screen (mobility moves, or the A/B lifts while mobile)
 };
 let ui = { remain:0, running:false, isGo:false, panel:"none", settingsTab:"program", pending:null, pickSets:3, pickReps:8, installHint:false, installed:false, toastTimer:null, swReg:null, updateReady:false, updateChecking:false, refreshing:false, appVersion: APP_VERSION, progressLiftId:null, progressRange:"1m", bwDraftKg:null, bwLinkSession:false, pendingHolds:null, expandedEx:new Set(), mainTab:"workout" };
 let remainVal = 0, lastCue = -1, tick = null, deferredInstall = null;
@@ -178,8 +180,12 @@ function load(){
       cuePack: normalizeCuePack(raw.cuePack),
       loudCuesV33: true,
       exerciseEdits,
+      mobile: false,
+      altExercises: hydrateMobility(raw.mobility?.exercises, exerciseEdits),
     };
     if (normalizeWaveTargets() || needsCueMigration || layoutChanged || xrdlChanged || neckChanged) save();
+    // Re-open Mobility if the app was closed mid-mobility (ANVIL only)
+    if (raw.mobility?.active === true && program.id === "anvil") swapMobility(true);
   } catch (e) {
     rescueSaved(e);
     ui.loadFailed = true;
@@ -192,20 +198,34 @@ function save(){
 function saveState(){
   localStorage.setItem(STORAGE, JSON.stringify({
     programId: state.programId, dayIndex: state.dayIndex,
-    exercises: state.exercises, history: state.history, liftProgress: state.liftProgress,
+    exercises: liftList(), history: state.history, liftProgress: state.liftProgress,
     bodyWeightLog: state.bodyWeightLog || [],
     soundVolume: clampVolume(state.soundVolume), cuePack: normalizeCuePack(state.cuePack),
+    mobility: mobilityBlob(),
     loudCuesV33: true, anvilLayoutV38: true, anvilXrdlV49: true, neckIsoV50: true,
     exerciseEdits: sanitizeEdits(state.exerciseEdits),
   }));
 }
 
+/** The A/B lift list / the mobility list, whichever one is on screen. Saved data always keeps them apart. */
+function liftList(){ return state.mobile ? (state.altExercises || []) : state.exercises; }
+function mobilityList(){ return state.mobile ? state.exercises : (state.altExercises || []); }
+function mobilityBlob(){ return { active: !!state.mobile, exercises: mobilityList() }; }
+/** Swap the on-screen list. No checks — callers decide when it's allowed. */
+function swapMobility(on){
+  if (!!state.mobile === !!on) return;
+  const shown = state.exercises;
+  state.exercises = (state.altExercises && state.altExercises.length) ? state.altExercises : (on ? mobilitySeed(state.exerciseEdits) : seedProgram(state.programId, state.dayIndex));
+  state.altExercises = shown;
+  state.mobile = !!on;
+}
 function backupPayload(){
   return {
     programId: state.programId, dayIndex: state.dayIndex,
-    exercises: state.exercises, history: state.history, liftProgress: state.liftProgress,
+    exercises: liftList(), history: state.history, liftProgress: state.liftProgress,
     bodyWeightLog: state.bodyWeightLog || [],
     soundVolume: clampVolume(state.soundVolume), cuePack: normalizeCuePack(state.cuePack),
+    mobility: mobilityBlob(),
     loudCuesV33: true,
     exerciseEdits: sanitizeEdits(state.exerciseEdits),
   };
@@ -360,6 +380,7 @@ function applyBackup(raw){
         cuePack: normalizeCuePack(raw.cuePack),
         loudCuesV33: true,
         exerciseEdits: sanitizeEdits(raw.exerciseEdits), // older backups have none → {}
+        ...(raw.mobility && typeof raw.mobility === "object" && Array.isArray(raw.mobility.exercises) ? { mobility: { active: raw.mobility.active === true, exercises: raw.mobility.exercises } } : {}),
       }));
       if (Array.isArray(raw.walks)) {
         walks = raw.walks.filter(w => w && typeof w.date === "string" && typeof w.durationSec === "number").slice(0, WALKS_MAX);

@@ -15,10 +15,16 @@ function renderTimerOnly(){
     el.textContent = (ui.remain>0 && ui.remain<=3 && !ui.isGo) ? String(ui.remain) : (ui.isGo ? "GO" : "");
   });
   const bar = document.getElementById("timer-bar-label");
-  if (bar) bar.textContent = (ui.running || ui.remain>0) ? `${ui.restMode==="switch"?"Switch sides":"Rest"} · ${active?.name??""}` : (active?.name??"");
-  document.querySelectorAll("[data-switch-lab]").forEach(el => { el.textContent = ui.restMode==="switch" ? (ui.isGo ? "Side 2 — go" : "Switch sides") : ""; });
+  if (bar) bar.textContent = (ui.running || ui.remain>0) ? `${restModeWord()} · ${active?.name??""}` : (active?.name??"");
+  document.querySelectorAll("[data-switch-lab]").forEach(el => { el.textContent = restModeLabel(); });
 }
 
+function restModeWord(){ return ui.restMode === "switch" ? "Switch sides" : ui.restMode === "hold" ? "Hold" : "Rest"; }
+function restModeLabel(){
+  if (ui.restMode === "switch") return ui.isGo ? "Side 2 — go" : "Switch sides";
+  if (ui.restMode === "hold") { const ex = state.exercises[ui.hold?.ei]; return ex?.bilateral ? `Hold · side ${ui.hold.side}` : "Hold"; }
+  return "";
+}
 function exNameHtml(ex, ei){ return `<span class="ex-name" data-act="howto" data-i="${ei}" role="button" tabindex="0" aria-label="How to do ${esc(ex.name)}">${esc(ex.name)}<i class="ex-info" aria-hidden="true">i</i></span>`; }
 function render(){
   const program = getProgram(state.programId);
@@ -30,7 +36,7 @@ function render(){
   const doneSets = state.exercises.reduce((n,ex) => n + (ex.skipped ? ex.sets : ex.setsLog.filter(s=>s.ok||s.miss).length), 0);
   const totalSets = state.exercises.reduce((n,ex) => n+ex.sets, 0);
   const inSession = new Set(state.exercises.map(e=>e.id));
-  const sub = `${program.name}${program.days.length>1 ? ` · ${program.days[state.dayIndex]?.label}` : ""} · ${doneSets}/${totalSets} sets`;
+  const sub = `${program.name}${state.mobile ? " · Mobility" : program.days.length>1 ? ` · ${program.days[state.dayIndex]?.label}` : ""} · ${doneSets}/${totalSets} sets`;
 
   let lastBlock = "";
   const cards = state.exercises.map((ex, ei) => {
@@ -75,7 +81,9 @@ function render(){
            <span class="kg${wNeg?" neg":""}">${fmtKg(ex.weight)}</span>
            <button class="icon-btn" data-act="weight" data-i="${ei}" data-d="${kgStepFor(ex)}" aria-label="Increase weight">${I.plus}</button>
            <span class="muted" style="font-size:.875rem">${wNeg?"kg assist":"kg"}</span>`;
-    const load = isNeckIso(ex)
+    const load = ex.mobility
+      ? `<span class="muted" style="font-size:.875rem">${ex.timed ? `Tap to start the ${esc(String(ex.reps))}s hold — cues at 3-2-1${ex.bilateral ? ", then switch sides" : ""}` : `Tap when done${ex.bilateral ? " — tap after side 1, again after side 2" : ""}`} · no kg</span>`
+      : isNeckIso(ex)
       ? `<span class="muted" style="font-size:.875rem">Forward → left → back → right · ${esc(String(ex.reps))}s each · no kg</span>`
       : ex.levels?.length
       ? `<button class="icon-btn" data-act="level" data-i="${ei}" data-d="-1" aria-label="Easier height">${I.minus}</button>
@@ -88,7 +96,7 @@ function render(){
     const sets = ex.skipped ? "" : `<div class="sets${tight?" tight":""}">${ex.setsLog.map((log,si) => {
       const shown = log.reps ?? ex.reps;
       const cls = log.ok ? "ok" : log.miss ? "miss" : log.half ? "half" : "";
-      const hit = isNeckIso(ex) ? `${shown}s` : ex.bilateral ? `${shown} ea` : String(shown);
+      const hit = (isNeckIso(ex) || (ex.mobility && ex.timed)) ? `${shown}s${ex.mobility && ex.bilateral ? " ea" : ""}` : ex.bilateral ? `${shown} ea` : String(shown);
       const isLast = si === ex.setsLog.length - 1;
       const half = !log.ok && !log.miss && log.half;
       const setLab = half ? "Side 2" : (isLast && amrap) ? "AMRAP" : String(si+1);
@@ -120,10 +128,10 @@ function render(){
       <article class="card${isActive?" active":""}${ex.skipped?" skipped":""}${resolved && !ex.skipped ? " " + statusCls : ""}" id="ex-${esc(ex.id)}">
         <div class="row">
           ${titleBlock}
-          <p class="meta">${esc(targetLabel(ex))}<br>${isNeckIso(ex) ? (ex.reps >= neckMaxFor(ex) ? `Max ${neckMaxFor(ex)}s · ${ex.failStreak}/3 no-rep` : `+${neckStepFor(ex)}s next clean · max ${neckMaxFor(ex)}s`) : `${ex.streak}/3 clean · ${ex.failStreak}/3 no-rep`}${amrap?`<br><span style="opacity:.7;font-size:.65rem">Last set AMRAP · +2 → +${fmtStep(kgStepFor(ex))} kg</span>`:""}</p>
+          <p class="meta">${esc(targetLabel(ex))}<br>${ex.mobility ? (ex.timed ? "Timed hold" : "Slow reps") : isNeckIso(ex) ? (ex.reps >= neckMaxFor(ex) ? `Max ${neckMaxFor(ex)}s · ${ex.failStreak}/3 no-rep` : `+${neckStepFor(ex)}s next clean · max ${neckMaxFor(ex)}s`) : `${ex.streak}/3 clean · ${ex.failStreak}/3 no-rep`}${amrap?`<br><span style="opacity:.7;font-size:.65rem">Last set AMRAP · +2 → +${fmtStep(kgStepFor(ex))} kg</span>`:""}</p>
         </div>
         <div class="weight">${load}</div>
-        ${isActive?`<div class="rest-box${ui.restMode==="switch"?" switching":""}"><p class="switch-lab" data-switch-lab>${ui.restMode==="switch" ? (ui.isGo ? "Side 2 — go" : "Switch sides") : ""}</p><p class="cue" data-cue>${loggedCue}</p><p class="big ${tClass}" data-timer style="font-size:3rem">${remainText}</p>
+        ${isActive?`<div class="rest-box${ui.restMode==="switch"?" switching":""}"><p class="switch-lab" data-switch-lab>${restModeLabel()}</p><p class="cue" data-cue>${loggedCue}</p><p class="big ${tClass}" data-timer style="font-size:3rem">${remainText}</p>
           <div class="split" style="justify-content:center;margin-top:.625rem"><button class="icon-btn" data-act="rest" data-d="-15" aria-label="Minus 15 seconds">−</button>
           <button class="icon-btn" data-act="rest" data-d="15" aria-label="Plus 15 seconds">+</button></div></div>`:""}
         ${sets}
@@ -135,7 +143,7 @@ function render(){
   }).join("");
 
   const days = program.days.length>1
-    ? `<div class="days">${program.days.map((d,i)=>`<button class="${i===state.dayIndex?"on":""}" data-act="day" data-d="${i}">${esc(d.label)}</button>`).join("")}</div>`
+    ? `<div class="days">${program.days.map((d,i)=>`<button class="${i===state.dayIndex && !state.mobile?"on":""}" data-act="day" data-d="${i}">${esc(d.label)}</button>`).join("")}${program.id === "anvil" ? `<button class="${state.mobile?"on":""}" data-act="mobility">Mobility</button>` : ""}</div>`
     : "";
 
   const remove = ui.panel==="remove" ? `<section class="panel"><p class="tiny">This session</p>${
@@ -233,8 +241,8 @@ function render(){
       ? `<select class="progress-select" data-act="progress-lift" aria-label="Lift">${liftOpts.map(o=>`<option value="${esc(o.id)}"${o.id===ui.progressLiftId?" selected":""}>${esc(o.name)}</option>`).join("")}</select>`
       : `<p class="note" style="margin-top:.5rem">No lifts logged yet.</p>`;
     // Workout time (sessions timed by the v47+ workout clock)
-    const timed = inRange(state.history.filter(h => h && h.durationSec > 0).map(h => ({ t: h.date, y: h.durationSec })).reverse());
-    const lastTimed = state.history.find(h => h && h.durationSec > 0);
+    const timed = inRange(state.history.filter(h => h && h.durationSec > 0 && h.type !== "mobility").map(h => ({ t: h.date, y: h.durationSec })).reverse());
+    const lastTimed = state.history.find(h => h && h.durationSec > 0 && h.type !== "mobility");
     const timeHtml = lastTimed ? `<section class="panel"><div class="chart-head"><p class="tiny">Workout time</p><span class="chart-unit">min</span></div>
         ${statRow([{ lab:"Last", val:fmtDurMin(lastTimed.durationSec) }, { lab:"Avg", val: timed.length ? fmtDurMin(timed.reduce((a, p) => a + p.y, 0) / timed.length) : "—" }, { lab:"Timed", val:String(timed.length) }])}
       </section>` : "";
@@ -388,22 +396,23 @@ ${restorePinField(".5rem")}
 
   const workoutBody = `
     ${days}
-    ${timerOn?`<div class="timer-bar"><div><p class="note" id="timer-bar-label" style="margin:0">${esc((ui.running||ui.remain>0)?`${ui.restMode==="switch"?"Switch sides":"Rest"} · ${active?.name??""}`:(active?.name??""))}</p>
+    ${timerOn?`<div class="timer-bar"><div><p class="note" id="timer-bar-label" style="margin:0">${esc((ui.running||ui.remain>0)?`${restModeWord()} · ${active?.name??""}`:(active?.name??""))}</p>
       <p class="big ${timeClass}" data-timer style="font-size:1.875rem">${timeText}</p></div>
       <div style="display:flex;gap:.375rem"><button class="icon-btn" data-act="rest" data-d="-15">−</button>
       <button class="icon-btn" data-act="rest" data-d="15">+</button></div></div>`:""}
     ${updateBanner}
     ${restoreBanner}
     ${hint}
+    ${state.mobile ? `<div class="mob-banner" role="note"><strong>${esc(MOBILITY_NOTE)}</strong><span>~15 min · full body, extra hips + lower back. Doesn’t change Day A/B or any lift.</span></div>` : ""}
     <div class="space">${cards}</div>
-    <div class="split">
+    ${state.mobile ? "" : `<div class="split">
       <button class="${ui.panel==="add"?"on":""}" data-act="panel" data-p="add">${I.plus} Add</button>
       <button class="${ui.panel==="remove"?"on":""}" data-act="panel" data-p="remove">${I.minus} Remove</button>
     </div>
     ${remove}
-    ${add}
+    ${add}`}
     <div class="split">
-      <button class="primary" id="log-session" data-act="log">Log session</button>
+      <button class="primary" id="log-session" data-act="log">${state.mobile ? "Log mobility" : "Log session"}</button>
       <button data-act="reset">${I.reset} Reset</button>
     </div>
     <p class="foot">Tap the big number to complete that set (tap again clears). “Each side” lifts: first tap = side 1 done → short Switch sides countdown; tap again after side 2 to log the set (switch time in ✏️ Edit, 0 = off). − / + dial that set’s reps — going below the target marks it failed (red). Leave a lift blank or skip — it won’t count. Weight − can go negative (assist kg; less assist = progress). Last set AMRAP on most lifts — hit target+2 (or more) to add 2.5kg next time. Timed holds and early heave stages skip AMRAP. Ember / Anvil / Titan: 3 clean at a rung climbs 6→8→10→12, then 3×6 +2.5kg (plank waves 20→30→20s, no kg) — AMRAP load bump skips the wave climb that session. Heaves ladder: hang → feet assist → negatives → full (auto-graduate after wave). ANVIL Cossack ladder: supported → short → full depth → goblet (auto-graduate after wave; kg on final). Titan plate bench: 3 clean at 3×12 @ ≥10kg → barbell 3×6 @ 20kg (AMRAP at 12 @ ≥10kg also graduates). Other programs: 3 clean → +2 reps (or +2.5 kg at cap). 3 short sessions → reset week (drop kg first if loaded).</p>`;

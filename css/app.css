@@ -246,3 +246,7 @@ main.has-tabs { padding-bottom: max(5.5rem, calc(env(safe-area-inset-bottom) + 4
 .set.half .set-label { color: var(--primary); }
 .switch-lab { margin:0; min-height:0; font-size:0.8rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--primary); text-align:center; }
 .switch-lab:empty { display:none; }
+/* v53 mobility */
+.mob-banner { display:flex; flex-direction:column; gap:0.25rem; margin:0.75rem 0 0; padding:0.75rem 0.875rem; border-radius:0.75rem; border:1px solid var(--primary); font-size:0.85rem; }
+.mob-banner strong { color:var(--primary); font-size:0.95rem; }
+.mob-banner span { color:var(--muted); }

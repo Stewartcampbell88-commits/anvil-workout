@@ -38,7 +38,12 @@ document.getElementById("app").addEventListener("click", (e) => {
   else if (act==="rest") adjustRest(+btn.dataset.d);
   else if (act==="chart-pt") showChartPoint(btn.dataset.c, +btn.dataset.i);
   else if (act==="progress-range") { if (PROGRESS_RANGES[btn.dataset.r]) { ui.progressRange = btn.dataset.r; render(); } }
-  else if (act==="day") { setDay(+btn.dataset.d); stopRest(); render(); }
+  else if (act==="day") {
+    const d = +btn.dataset.d;
+    if (state.mobile) { if (!exitMobility()) return; if (d === state.dayIndex) return; }
+    setDay(d); stopRest(); render();
+  }
+  else if (act==="mobility") enterMobility();
   else if (act==="program") { setProgram(btn.dataset.id, 0); stopRest(); ui.panel="none"; toast(`${getProgram(btn.dataset.id).name} loaded`); render(); }
   else if (act==="settings-tab") { const tab=btn.dataset.tab; if (["program","sound","history","progress","backup","about"].includes(tab)) { ui.settingsTab=tab; render(); } }
   else if (act==="main-tab") {

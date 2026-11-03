@@ -159,6 +159,8 @@ function cueSwitch(){
   playTone({ freq: 660, dur: 0.12, type: "triangle", gain: 0.3 });
   playTone({ freq: 880, dur: 0.16, type: "triangle", gain: 0.3, when: 0.15 });
 }
+/** Hold start: one soft low note. */
+function cueHoldStart(){ playTone({ freq: 523, dur: 0.18, type: "sine", gain: 0.28 }); }
 function cueComplete(){
   const pack = getCuePack();
   if (pack.kind === "voice") {

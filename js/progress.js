@@ -4,7 +4,7 @@ function liftSeries(liftId){
   const pts = [];
   for (let i = (state.history||[]).length - 1; i >= 0; i--) {
     const h = state.history[i];
-    if (!Array.isArray(h.lifts)) continue;
+    if (!Array.isArray(h.lifts) || h.type === "mobility") continue;
     const hit = h.lifts.find(l => l.id === liftId);
     if (!hit) continue;
     { const w = Number(hit.weight); const r = Number(hit.reps); pts.push({ t: h.date, weight: Number.isFinite(w) ? w : 0, reps: Number.isFinite(r) ? r : 0, clean: !!hit.clean, name: hit.name }); }
@@ -26,7 +26,7 @@ function bodySeries(){
 function progressLiftOptions(){
   const map = new Map();
   for (const h of (state.history || [])) {
-    if (!Array.isArray(h.lifts)) continue;
+    if (!Array.isArray(h.lifts) || h.type === "mobility") continue;
     for (const l of h.lifts) {
       if (!l?.id) continue;
       map.set(l.id, l.name || l.id);
