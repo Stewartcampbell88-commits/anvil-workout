@@ -82,7 +82,7 @@ function render(){
            <button class="icon-btn" data-act="weight" data-i="${ei}" data-d="${kgStepFor(ex)}" aria-label="Increase weight">${I.plus}</button>
            <span class="muted" style="font-size:.875rem">${wNeg?"kg assist":"kg"}</span>`;
     const load = ex.mobility
-      ? `<span class="muted" style="font-size:.875rem">${ex.timed ? `Tap to start the ${esc(String(ex.reps))}s hold — cues at 3-2-1${ex.bilateral ? ", then switch sides" : ""}` : `Tap when done${ex.bilateral ? " — tap after side 1, again after side 2" : ""}`} · no kg</span>`
+      ? `<span class="muted" style="font-size:.875rem">${ui.run && ui.run.phase !== "done" && ui.run.ei === ei ? "Routine running — timer above runs this move · tap it to finish early" : ex.timed ? `Tap to start the ${esc(String(ex.reps))}s hold — cues at 3-2-1${ex.bilateral ? ", then switch sides" : ""}` : `Tap when done${ex.bilateral ? " — tap after side 1, again after side 2" : ""}`} · no kg</span>`
       : isNeckIso(ex)
       ? `<span class="muted" style="font-size:.875rem">Forward → left → back → right · ${esc(String(ex.reps))}s each · no kg</span>`
       : ex.levels?.length
@@ -128,10 +128,10 @@ function render(){
       <article class="card${isActive?" active":""}${ex.skipped?" skipped":""}${resolved && !ex.skipped ? " " + statusCls : ""}" id="ex-${esc(ex.id)}">
         <div class="row">
           ${titleBlock}
-          <p class="meta">${esc(targetLabel(ex))}<br>${ex.mobility ? (ex.timed ? "Timed hold" : "Slow reps") : isNeckIso(ex) ? (ex.reps >= neckMaxFor(ex) ? `Max ${neckMaxFor(ex)}s · ${ex.failStreak}/3 no-rep` : `+${neckStepFor(ex)}s next clean · max ${neckMaxFor(ex)}s`) : `${ex.streak}/3 clean · ${ex.failStreak}/3 no-rep`}${amrap?`<br><span style="opacity:.7;font-size:.65rem">Last set AMRAP · +2 → +${fmtStep(kgStepFor(ex))} kg</span>`:""}</p>
+          <p class="meta">${esc(targetLabel(ex))}<br>${ex.mobility ? (ex.timed ? "Timed hold" : `Slow reps · ${workSecFor(ex)}s${runSides(ex) === 2 ? " per side" : ""}`) : isNeckIso(ex) ? (ex.reps >= neckMaxFor(ex) ? `Max ${neckMaxFor(ex)}s · ${ex.failStreak}/3 no-rep` : `+${neckStepFor(ex)}s next clean · max ${neckMaxFor(ex)}s`) : `${ex.streak}/3 clean · ${ex.failStreak}/3 no-rep`}${amrap?`<br><span style="opacity:.7;font-size:.65rem">Last set AMRAP · +2 → +${fmtStep(kgStepFor(ex))} kg</span>`:""}</p>
         </div>
         <div class="weight">${load}</div>
-        ${isActive?`<div class="rest-box${ui.restMode==="switch"?" switching":""}"><p class="switch-lab" data-switch-lab>${restModeLabel()}</p><p class="cue" data-cue>${loggedCue}</p><p class="big ${tClass}" data-timer style="font-size:3rem">${remainText}</p>
+        ${isActive && !(ex.mobility && ui.run)?`<div class="rest-box${ui.restMode==="switch"?" switching":""}"><p class="switch-lab" data-switch-lab>${restModeLabel()}</p><p class="cue" data-cue>${loggedCue}</p><p class="big ${tClass}" data-timer style="font-size:3rem">${remainText}</p>
           <div class="split" style="justify-content:center;margin-top:.625rem"><button class="icon-btn" data-act="rest" data-d="-15" aria-label="Minus 15 seconds">−</button>
           <button class="icon-btn" data-act="rest" data-d="15" aria-label="Plus 15 seconds">+</button></div></div>`:""}
         ${sets}
@@ -403,7 +403,7 @@ ${restorePinField(".5rem")}
     ${updateBanner}
     ${restoreBanner}
     ${hint}
-    ${state.mobile ? `<div class="mob-banner" role="note"><strong>${esc(MOBILITY_NOTE)}</strong><span>~15 min · full body, extra hips + lower back. Doesn’t change Day A/B or any lift.</span></div>` : ""}
+    ${state.mobile ? `<div class="mob-banner" role="note"><strong>${esc(MOBILITY_NOTE)}</strong><span>~${Math.round(routineSeconds(state.exercises)/60)} min · full body, extra hips + lower back. Doesn’t change Day A/B or any lift.</span></div>${renderRunPanel()}` : ""}
     <div class="space">${cards}</div>
     ${state.mobile ? "" : `<div class="split">
       <button class="${ui.panel==="add"?"on":""}" data-act="panel" data-p="add">${I.plus} Add</button>
@@ -444,6 +444,7 @@ ${restorePinField(".5rem")}
     ${tabBar}
   `;
   syncClockTicker();
+  if (state.mobile) { const h = document.querySelector("header"); if (h) document.documentElement.style.setProperty("--hdr-h", h.offsetHeight + "px"); }
 }
 
 document.addEventListener("pointerdown", unlockAudio, {once:true});
@@ -525,6 +526,7 @@ function renderEditSheet(d, ex){
         : `+2 reps after 3 clean sessions up to ${d.repTop}, then +${fmtStep(d.kgStep)} kg and back to ${d.repLow}.`}</p>`;
   }
   body += sec("Rest") + stepper("rest", "Rest between sets", restTxt, "15 s steps");
+  if (k.work) body += stepper("workSec", "Work timer", `${d.workSec}s`, ex.bilateral && !ex.alternating ? "per side · Start routine" : "whole move · Start routine");
   if (k.switch) body += stepper("switchSec", "Switch sides timer", d.switchSec ? `${d.switchSec}s` : "Off", "after side 1 · 0 = off")
     + `<p class="edit-hint">Tap the set after side 1 → short countdown + cue to switch. Tap again after side 2 → set logged, normal rest.</p>`;
   if (k.names) {
@@ -541,4 +543,53 @@ function renderEditSheet(d, ex){
     </div>
     <div class="edit-actions"><button data-act="edit-cancel">Cancel</button><button class="primary" data-act="edit-save">Save</button></div>
   </div></div>`;
+}
+
+/** v54 Mobility player: Start button, the running routine, or the end summary. */
+function runPhaseText(r){
+  const ex = state.exercises[r.ei];
+  if (!ex) return { cap: "", name: "" };
+  const sideTxt = runSides(ex) === 2 ? ` · side ${r.side}` : "";
+  const setTxt = ex.sets > 1 ? ` · set ${r.si + 1}/${ex.sets}` : "";
+  if (r.phase === "next") return { cap: r.lead ? "Get ready" : "Next", name: ex.name + setTxt };
+  if (r.phase === "switch") return { cap: "Switch sides", name: ex.name + setTxt };
+  return { cap: (ex.timed ? "Hold" : "Go") + sideTxt, name: ex.name + setTxt };
+}
+function renderRunPanel(){
+  const r = ui.run;
+  if (!r) {
+    const sec = routineSeconds(state.exercises);
+    if (!sec) return "";
+    return `<div class="run-panel idle"><button class="primary run-start" data-act="run-start">▶ Start routine · ~${Math.max(1, Math.round(sec / 60))} min</button><p class="note" style="margin:.375rem 0 0;text-align:center">Runs every move in order with timers + cues. Or tap moves yourself.</p></div>`;
+  }
+  if (r.phase === "done") {
+    const exs = state.exercises;
+    const done = exs.filter(e => !e.skipped && e.setsLog.some(s => s.ok)).length, skipped = exs.filter(e => e.skipped).length;
+    const sec = clockElapsedSec();
+    return `<div class="run-panel done" role="status"><p class="run-cap">Routine complete</p><p class="run-name">${done}/${exs.length} moves${skipped ? ` · ${skipped} skipped` : ""}${sec != null ? ` · ${esc(fmtClock(sec))}` : ""}</p>
+      ${renderRunWhy()}
+      <div class="run-ctl two"><button data-act="run-close">Not now</button><button class="primary" data-act="log">Log mobility</button></div></div>`;
+  }
+  const t = runPhaseText(r), ex = state.exercises[r.ei];
+  const pos = state.exercises.indexOf(ex) + 1;
+  const left = runLeftSec();
+  return `<div class="run-panel${r.phase === "switch" ? " switching" : r.phase === "next" ? " between" : ""}${r.paused ? " paused" : ""}" role="timer" aria-live="polite">
+    <p class="run-cap" data-run-cap>${esc(r.paused ? "Paused · " + t.cap : t.cap)}</p>
+    <p class="run-name">${esc(t.name)}</p>
+    <p class="run-time${left <= 3 ? " warn" : ""}" data-run-time>${fmtTime(left)}</p>
+    <p class="note run-sub">Move ${pos}/${state.exercises.length} · ${esc(targetLabel(ex))}</p>
+    ${renderRunWhy()}
+    <div class="run-ctl"><button data-act="run-back" aria-label="Back">◀︎ Back</button><button class="primary" data-act="run-pause">${r.paused ? "▶ Resume" : "❚❚ Pause"}</button><button data-act="run-skip" aria-label="Skip move">Skip ▶︎</button></div>
+    <div class="run-ctl"><button data-act="run-adj" data-d="-15" aria-label="Minus 15 seconds">−15 s</button><button data-act="run-adj" data-d="15" aria-label="Plus 15 seconds">+15 s</button><button data-act="run-stop">Stop</button></div>
+  </div>`;
+}
+function renderRunWhy(){
+  const s = ui.run?.skipped; const ex = s && state.exercises[s.ei];
+  if (!ex || !ex.skipped) return "";
+  const quick = ["pain", "fatigue", "time", "injury", "other"];
+  return `<div class="run-why"><p class="note" style="margin:0 0 .375rem">Skipped ${esc(ex.name)} — why? (optional)</p><div class="chips">${quick.map(id => `<button class="chip" data-act="run-why" data-r="${id}">${esc(SKIP_REASONS.find(x => x.id === id).label)}</button>`).join("")}</div></div>`;
+}
+function renderRunOnly(){
+  const left = runLeftSec();
+  document.querySelectorAll("[data-run-time]").forEach(el => { const t = fmtTime(left); if (el.textContent !== t) el.textContent = t; el.classList.toggle("warn", left <= 3); });
 }

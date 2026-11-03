@@ -85,10 +85,13 @@ test("rep moves tap to complete; each-side rep moves use the switch-sides timer"
   await p.evaluate(() => enterMobility());
   await p.click('#ex-mob-catcow [data-act="set"]');
   assert.deepEqual(await p.evaluate(() => [state.exercises[0].setsLog[0].ok, ui.restMode, ui.remain]), [true, "rest", 15]);
+  // 90/90 alternates in place (v54): one tap, no switch timer
   await p.click('#ex-mob-9090 [data-act="set"]');
-  assert.deepEqual(await p.evaluate(() => [state.exercises[2].setsLog[0], ui.restMode, ui.remain]), [{ ok: false, miss: false, half: true }, "switch", 10]);
-  await p.click('#ex-mob-9090 [data-act="set"]');
-  assert.equal(await p.evaluate(() => state.exercises[2].setsLog[0].ok), true);
+  assert.deepEqual(await p.evaluate(() => [state.exercises[2].setsLog[0].ok, ui.restMode]), [true, "rest"]);
+  await p.click('#ex-mob-wgs [data-act="set"]');
+  assert.deepEqual(await p.evaluate(() => [state.exercises[7].setsLog[0], ui.restMode, ui.remain]), [{ ok: false, miss: false, half: true }, "switch", 10]);
+  await p.click('#ex-mob-wgs [data-act="set"]');
+  assert.equal(await p.evaluate(() => state.exercises[7].setsLog[0].ok), true);
   await app.close();
 });
 

@@ -214,6 +214,7 @@ function mobilityBlob(){ return { active: !!state.mobile, exercises: mobilityLis
 /** Swap the on-screen list. No checks — callers decide when it's allowed. */
 function swapMobility(on){
   if (!!state.mobile === !!on) return;
+  if (typeof stopRoutine === "function") stopRoutine();
   const shown = state.exercises;
   state.exercises = (state.altExercises && state.altExercises.length) ? state.altExercises : (on ? mobilitySeed(state.exerciseEdits) : seedProgram(state.programId, state.dayIndex));
   state.altExercises = shown;

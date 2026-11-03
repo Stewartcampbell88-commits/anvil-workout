@@ -7,7 +7,7 @@ const ANVIL_PREVIEW = /\/(anvil-)?preview\//.test(location.pathname);
 const PREVIEW_PREFIX = "anvil-preview:";
 function K(key){ return ANVIL_PREVIEW ? PREVIEW_PREFIX + key : key; }
 const STORAGE = K("anvil_app_v3");
-const APP_VERSION = "anvil-v53";
+const APP_VERSION = "anvil-v54";
 const CUE_LOUDNESS = 2.4;
 const CUE_MAX_GAIN = 0.95;
 const SET_OPTS = [1,2,3,4,5];
@@ -394,20 +394,34 @@ const LIBRARY = [
 const MOBILITY_NOTE = "Pain-free, slow, no bouncing. Ease off anything that pinches.";
 function mob(id, name, reps, extra = {}){ return { id: "mob-" + id, name, sets: 1, reps, rest: 15, weight: 0, bw: true, mobility: true, block: "Mobility", ...extra }; }
 const MOBILITY = [
-  mob("catcow", "Cat-cow", 8, { note: "Hands and knees. Slowly round the whole back up, then let the belly drop and chest lift. Breathe with each rep." }),
+  mob("catcow", "Cat-cow", 8, { work: 40, note: "Hands and knees. Slowly round the whole back up, then let the belly drop and chest lift. Breathe with each rep." }),
   mob("child", "Child’s pose with side reach", 30, { timed: true, bilateral: true, note: "Hips back to heels, walk both hands to one side until the side of your back opens. Slow breaths." }),
-  mob("9090", "90/90 hip switches", 8, { bilateral: true, note: "Sit with both knees bent 90°. Rotate both knees to the other side; tall chest, hands behind for support if needed." }),
+  mob("9090", "90/90 hip switches", 8, { work: 50, bilateral: true, alternating: true, note: "Sit with both knees bent 90°. Rotate both knees to the other side; tall chest, hands behind for support if needed." }),
   mob("hipflex", "Half-kneeling hip flexor stretch", 30, { timed: true, bilateral: true, note: "Back knee down, squeeze that glute and tuck the pelvis, then shift forward a little. Don’t arch the lower back." }),
-  mob("bridge", "Glute bridge (2 s hold)", 10, { note: "Feet flat, ribs down. Drive through the heels, squeeze the glutes, hold 2 s at the top, lower slowly." }),
+  mob("bridge", "Glute bridge (2 s hold)", 10, { work: 40, note: "Feet flat, ribs down. Drive through the heels, squeeze the glutes, hold 2 s at the top, lower slowly." }),
   mob("fig4", "Lying figure-4 stretch", 30, { timed: true, bilateral: true, note: "On your back, ankle over the other knee. Pull the bottom thigh in until you feel the outer hip / glute." }),
-  mob("deadbug", "Dead bug", 6, { bilateral: true, note: "Lower back pressed into the floor. Slowly reach the opposite arm and leg long, exhale, return." }),
-  mob("wgs", "World’s greatest stretch", 4, { bilateral: true, note: "Long lunge, hand inside the front foot, rotate the other arm to the ceiling. Back knee down if needed." }),
-  mob("openbook", "Thoracic open book", 6, { bilateral: true, note: "Lie on your side, knees bent and stacked. Open the top arm across, eyes follow the hand, knees stay together." }),
-  mob("ankle", "Wall ankle rocks", 10, { bilateral: true, note: "Foot a hand-width from the wall. Drive the knee toward the wall, heel stays down. Inch back as it gets easy." }),
-  mob("wallslide", "Wall slides", 10, { note: "Back, head and arms on the wall. Slide the arms up and down slowly, ribs down, lower back gently flat." }),
+  mob("deadbug", "Dead bug", 6, { work: 40, bilateral: true, alternating: true, note: "Lower back pressed into the floor. Slowly reach the opposite arm and leg long, exhale, return." }),
+  mob("wgs", "World’s greatest stretch", 4, { work: 25, bilateral: true, note: "Long lunge, hand inside the front foot, rotate the other arm to the ceiling. Back knee down if needed." }),
+  mob("openbook", "Thoracic open book", 6, { work: 25, bilateral: true, note: "Lie on your side, knees bent and stacked. Open the top arm across, eyes follow the hand, knees stay together." }),
+  mob("ankle", "Wall ankle rocks", 10, { work: 25, bilateral: true, note: "Foot a hand-width from the wall. Drive the knee toward the wall, heel stays down. Inch back as it gets easy." }),
+  mob("wallslide", "Wall slides", 10, { work: 40, note: "Back, head and arms on the wall. Slide the arms up and down slowly, ribs down, lower back gently flat." }),
   mob("squat", "Deep squat hold", 30, { timed: true, note: "Sit into a deep squat, heels down, chest up. Hold a door frame or post for balance. 30–45 s." }),
 ];
 const MOBILITY_IDS = new Set(MOBILITY.map(m => m.id));
+const RUN_LEAD_IN = 5; // "Get ready" before the first move
+/** Work time for one side of a move: timed moves = their seconds; rep moves = their work timer (edit: workSec). */
+function workSecFor(ex){
+  if (ex?.timed) return Math.max(1, Number(ex.reps) || 1);
+  const n = ex?.workSec ?? ex?.work;
+  return Number.isInteger(n) && n > 0 ? n : 40;
+}
+function runSides(ex){ return ex?.bilateral && !ex?.alternating ? 2 : 1; }
+/** Rough length of a continuous run over the given moves (lead-in + work + switches + transitions). */
+function routineSeconds(exs){
+  const todo = (exs || []).filter(e => !e.skipped && !(e.setsLog || []).every(s => s.ok || s.miss));
+  if (!todo.length) return 0;
+  return RUN_LEAD_IN + todo.reduce((t, e, i) => t + workSecFor(e) * runSides(e) + (runSides(e) === 2 ? switchSecFor(e) : 0) + (i < todo.length - 1 ? (e.rest || 0) : 0), 0);
+}
 function getProgram(id){ return PROGRAMS.find(p=>p.id===id) || PROGRAMS[0]; }
 function blankSets(n){ return Array.from({length:n},()=>({ok:false,miss:false})); }
 function toExercise(d){
@@ -521,14 +535,15 @@ function skipReasonText(reason, note){
  *  The lift id never changes, so a rename keeps history, progress graphs and the balance chain linked. */
 const KG_STEP_OPTS = [0.5, 1, 1.25, 2, 2.5, 5, 10];
 const EDIT_NAME_MAX = 60, EDIT_NOTE_MAX = 300;
-const EDIT_INT = { sets:[1,10], repLow:[1,50], repTop:[1,60], rest:[10,600], secStep:[1,30], secMax:[5,300], switchSec:[0,60] };
-const EDIT_DERIVED = ["kgStep","repLow","repTop","secStep","secMax","switchSec"];
+const EDIT_INT = { sets:[1,10], repLow:[1,50], repTop:[1,60], rest:[10,600], secStep:[1,30], secMax:[5,300], switchSec:[0,60], workSec:[5,300] };
+const EDIT_DERIVED = ["kgStep","repLow","repTop","secStep","secMax","switchSec","workSec"];
 /** v52 switch-sides timer: single-side ("each side" = bilateral) lifts only. Seconds between side 1 and side 2; 0 = off. */
 const SWITCH_DEFAULT = 10;
 function switchSecFor(ex){
   if (!ex?.bilateral) return 0;
   const n = ex.switchSec;
-  return Number.isInteger(n) && n >= 0 && n <= 60 ? n : SWITCH_DEFAULT;
+  if (Number.isInteger(n) && n >= 0 && n <= 60) return n;
+  return ex.alternating ? 0 : SWITCH_DEFAULT; // v54: alternating-in-place moves (dead bug, 90/90) run as one block
 }
 function sanitizeEdit(o){
   if (!o || typeof o !== "object" || Array.isArray(o)) return null;
@@ -673,7 +688,7 @@ function fmtTime(sec){ const s=Math.max(0,Math.floor(sec)); return `${Math.floor
 function targetLabel(ex){
   if (ex?.mobility) {
     const t = ex.timed ? `${ex.reps}s` : `${ex.reps}${ex.bilateral ? "" : " reps"}`;
-    return `${ex.sets > 1 ? `${ex.sets} × ` : ""}${t}${ex.bilateral ? " each side" : ""}`;
+    return `${ex.sets > 1 ? `${ex.sets} × ` : ""}${t}${ex.bilateral ? (ex.alternating ? " each side, alternating" : " each side") : ""}`;
   }
   if (isNeckIso(ex)) return `${ex.sets} × 4-way · ${ex.reps}s each`;
   const unit = isPlankSeconds(ex) ? "s" : "";

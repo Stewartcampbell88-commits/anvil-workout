@@ -44,6 +44,14 @@ document.getElementById("app").addEventListener("click", (e) => {
     setDay(d); stopRest(); render();
   }
   else if (act==="mobility") enterMobility();
+  else if (act==="run-start") startRoutine();
+  else if (act==="run-pause") runPauseToggle();
+  else if (act==="run-skip") runSkip();
+  else if (act==="run-back") runBack();
+  else if (act==="run-adj") runAdjust(+btn.dataset.d);
+  else if (act==="run-stop") { stopRoutine(); render(); }
+  else if (act==="run-why") runSkipReason(btn.dataset.r);
+  else if (act==="run-close") { stopRoutine(); render(); }
   else if (act==="program") { setProgram(btn.dataset.id, 0); stopRest(); ui.panel="none"; toast(`${getProgram(btn.dataset.id).name} loaded`); render(); }
   else if (act==="settings-tab") { const tab=btn.dataset.tab; if (["program","sound","history","progress","backup","about"].includes(tab)) { ui.settingsTab=tab; render(); } }
   else if (act==="main-tab") {

@@ -139,6 +139,7 @@ function chooseSkipReason(reason){
 function cancelSkip(){ ui.skipAsk = null; ui.panel = "none"; render(); }
 function afterSkipToggle(ei){ if (ei===currentIndex(state.exercises)) { stopRest(); render(); } }
 function resetChecks(){
+  if (typeof stopRoutine === "function" && ui.run) stopRoutine();
   state.exercises = state.exercises.map(({skipReason, skipNote, ...ex}) => ({...ex, skipped:false, setsLog: blankSets(ex.sets)}));
   clearExpandedEx();
   clockClear();
@@ -577,6 +578,13 @@ function markHalf(ei, si){
 }
 function onMark(ei, si){
   unlockAudio();
+  // v54 routine running: tapping the current move = done now; other moves just tick (no timers)
+  if (state.mobile && runActive()) {
+    const r = ui.run;
+    if (ei === r.ei && (r.phase === "work" || r.phase === "switch")) { runAdvance(Date.now(), false); save(); render(); if (runActive()) runScrollTo(ui.run.ei); }
+    else markSet(ei, si);
+    return;
+  }
   const ex0 = state.exercises[ei];
   const before = ex0.setsLog[si];
   const starting = !before.ok && !before.miss;
@@ -682,7 +690,7 @@ function skipBodyWeight(){
 /** What the Edit sheet shows for this lift. */
 function editKind(ex){
   const timed = isPlankSeconds(ex), neck = isNeckIso(ex);
-  if (ex.mobility) return { neck:false, timed, ladder:false, wave:false, kg:false, kgStep:false, range:false, names:true, switch: !!ex.bilateral, mobility:true };
+  if (ex.mobility) return { neck:false, timed, ladder:false, wave:false, kg:false, kgStep:false, range:false, names:true, switch: !!ex.bilateral, mobility:true, work: !timed };
   return {
     neck, timed,
     ladder: isStageLadder(ex),
@@ -707,7 +715,7 @@ function editDraftFrom(ex, ei){
     ei, id: ex.id, name: ex.name, note: ex.note || "", sets: ex.sets, reps: ex.reps, repsPick: ex.reps, rest: ex.rest,
     weight: Number(ex.weight) || 0, kgStep: kgStepFor(ex),
     repLow: ex.repLow ?? (k.wave ? waveRepsFor(ex)[0] : bl), repTop: ex.repTop ?? (k.wave ? waveRepsFor(ex).slice(-1)[0] : bt),
-    secStep: neckStepFor(ex), secMax: neckMaxFor(ex), switchSec: switchSecFor(ex), msg: "",
+    secStep: neckStepFor(ex), secMax: neckMaxFor(ex), switchSec: switchSecFor(ex), workSec: workSecFor(ex), msg: "",
   };
 }
 function openExerciseEdit(ei){
@@ -731,6 +739,7 @@ function editStep(field, dir){
   else if (field === "repLow") { d.repLow = clamp(d.repLow + dir, 1, 50); if (d.repTop < d.repLow) d.repTop = d.repLow; }
   else if (field === "repTop") d.repTop = clamp(d.repTop + dir, d.repLow, 60);
   else if (field === "secStep") d.secStep = clamp(d.secStep + dir, 1, 30);
+  else if (field === "workSec") d.workSec = clamp(Math.round((d.workSec + dir * 5) / 5) * 5, 5, 300);
   else if (field === "switchSec") d.switchSec = clamp(Math.round((d.switchSec + dir * 5) / 5) * 5, 0, 60);
   else if (field === "secMax") d.secMax = clamp(d.secMax + dir * 5, Math.max(NECK_START, 5), 300);
   else if (field === "reps") {
@@ -791,7 +800,8 @@ function saveExerciseEdit(){
   if (k.names && String(d.note || "").trim() !== String(def.note || "")) edit.note = String(d.note || "").trim().slice(0, EDIT_NOTE_MAX);
   if (k.neck && d.secStep !== NECK_STEP) edit.secStep = d.secStep;
   if (k.neck && d.secMax !== NECK_MAX) edit.secMax = d.secMax;
-  if (k.switch && d.switchSec !== SWITCH_DEFAULT) edit.switchSec = d.switchSec;
+  if (k.switch && d.switchSec !== switchSecFor({...def, switchSec: undefined})) edit.switchSec = d.switchSec;
+  if (k.work && d.workSec !== workSecFor({...def, workSec: undefined})) edit.workSec = d.workSec;
   const all = sanitizeEdits(state.exerciseEdits);
   const clean = sanitizeEdit(edit);
   if (clean) (all[pid] ||= {})[ex.id] = clean;
@@ -900,3 +910,177 @@ function onLogMobility(){
   toast("Mobility logged", e.notes[0].replace(/^Mobility: /, ""));
   render();
 }
+
+// ---- v54 continuous Mobility routine: Start → every move runs hands-free (end-time based, like the rest timer) ----
+// Phases: "next" (Get ready / Next: <move>) → "work" side 1 → "switch" → "work" side 2 → next move … → "done".
+let runTimer = null, runLock = null;
+function runActive(){ return !!(ui.run && ui.run.phase && ui.run.phase !== "done"); }
+function runNextIndex(from){
+  for (let i = Math.max(0, from); i < state.exercises.length; i++) { const e = state.exercises[i]; if (!e.skipped && !exerciseResolved(e)) return i; }
+  return -1;
+}
+function runNextAfter(ei){ const n = runNextIndex(ei + 1); return n >= 0 ? n : runNextIndex(0); }
+function runFirstOpenSet(ex){ const i = (ex?.setsLog || []).findIndex(s => !s.ok && !s.miss); return i < 0 ? 0 : i; }
+function runPhaseSec(r){
+  const ex = state.exercises[r.ei];
+  if (r.phase === "work") return workSecFor(ex);
+  if (r.phase === "switch") return switchSecFor(ex);
+  if (r.phase === "next") return r.lead ? RUN_LEAD_IN : Math.max(0, r.gap ?? 15);
+  return 0;
+}
+function runEnter(phase, ei, side, at = Date.now(), opts = {}){
+  const ex = state.exercises[ei];
+  const r = { ...(ui.run || {}), phase, ei, side, si: opts.si ?? (phase === "next" ? runFirstOpenSet(ex) : (ui.run?.si ?? 0)), lead: !!opts.lead, gap: opts.gap, paused: false, left: null, lastCue: -1, phaseAt: at };
+  r.endAt = at + runPhaseSec(r) * 1000;
+  ui.run = r;
+}
+function startRoutine(){
+  if (!state.mobile) return false;
+  const ei = runNextIndex(0);
+  if (ei < 0) { toast("All moves done — tap Log mobility"); return false; }
+  stopRest();
+  clockNoteSet();
+  ui.run = { skipped: null };
+  runEnter("next", ei, 1, Date.now(), { lead: true });
+  cueHoldStart();
+  runEnsureTicker(); runWake(true);
+  render(); runScrollTo(ei);
+  return true;
+}
+function stopRoutine(){ ui.run = null; runEnsureTicker(); runWake(false); }
+function runMarkHalf(ei, si){
+  state.exercises = state.exercises.map((e, i) => i !== ei ? e : {...e, skipped: false, setsLog: e.setsLog.map((s, j) => j === si ? {...s, half: true} : s)});
+}
+function runMarkDone(ei, si){
+  clockNoteSet();
+  state.exercises = state.exercises.map((e, i) => i !== ei ? e : {...e, skipped: false, setsLog: e.setsLog.map((s, j) => j === si ? {ok: true, miss: false, reps: s.reps ?? e.reps} : s)});
+}
+function runFinish(at, silent){
+  ui.run = { phase: "done", endAt: at, skipped: ui.run?.skipped || null };
+  runEnsureTicker(); runWake(false);
+  if (!silent) { cueComplete(); if (navigator.vibrate) navigator.vibrate([200,80,200]); }
+}
+/** One phase has ended at `at` (ms). silent = catching up after the phone was locked (no burst of cues). */
+function runAdvance(at, silent){
+  const r = ui.run; if (!runActive()) return;
+  const ex = state.exercises[r.ei];
+  if (!ex) { runFinish(at, silent); return; }
+  if (r.phase === "next" || r.phase === "switch") {
+    runEnter("work", r.ei, r.phase === "switch" ? 2 : 1, at, { si: r.si });
+    if (!silent) cueComplete();
+    return;
+  }
+  // work ended
+  if (runSides(ex) === 2 && r.side === 1) {
+    runMarkHalf(r.ei, r.si);
+    if (switchSecFor(ex) > 0) { runEnter("switch", r.ei, 2, at, { si: r.si }); if (!silent) { cueSwitch(); if (navigator.vibrate) navigator.vibrate([120,60,120]); } }
+    else { runEnter("work", r.ei, 2, at, { si: r.si }); if (!silent) cueComplete(); }
+    return;
+  }
+  runMarkDone(r.ei, r.si);
+  ui.run.skipped = null;
+  if (r.si + 1 < ex.sets) { runEnter("next", r.ei, 1, at, { gap: ex.rest || 0, si: r.si + 1 }); if (!silent) cueHoldStart(); return; }
+  const ni = runNextAfter(r.ei);
+  if (ni < 0) { runFinish(at, silent); return; }
+  runEnter("next", ni, 1, at, { gap: ex.rest || 0 });
+  if (!silent) cueHoldStart();
+}
+function runTick(){
+  const r = ui.run;
+  if (!runActive() || r.paused) return;
+  const now = Date.now();
+  let changed = false, guard = 0;
+  const cur = state.exercises[r.ei];
+  if (cur && cur.skipped && r.phase !== "next") { // skipped from its card mid-move
+    const ni = runNextAfter(r.ei);
+    if (ni < 0) runFinish(now, false); else runEnter("next", ni, 1, now, { gap: 5 });
+    changed = true;
+  }
+  while (runActive() && !ui.run.paused && now >= ui.run.endAt && guard++ < 500) {
+    runAdvance(ui.run.endAt, now - ui.run.endAt > 1500);
+    changed = true;
+  }
+  if (changed) { save(); render(); if (runActive()) runScrollTo(ui.run.ei); return; }
+  const left = Math.ceil((ui.run.endAt - now) / 1000);
+  if ((left === 3 || left === 2 || left === 1) && ui.run.lastCue !== left) { ui.run.lastCue = left; cueCountdown(left); if (navigator.vibrate) navigator.vibrate(60); }
+  renderRunOnly();
+}
+function runLeftSec(){
+  const r = ui.run; if (!runActive()) return 0;
+  return Math.max(0, Math.ceil((r.paused ? r.left : r.endAt - Date.now()) / 1000));
+}
+function runPauseToggle(){
+  const r = ui.run; if (!runActive()) return;
+  const now = Date.now();
+  if (r.paused) { r.endAt = now + (r.left ?? 0); r.paused = false; r.left = null; runWake(true); }
+  else { r.left = Math.max(0, r.endAt - now); r.paused = true; }
+  runEnsureTicker(); render();
+}
+function runAdjust(d){
+  const r = ui.run; if (!runActive()) return;
+  const now = Date.now();
+  if (r.paused) r.left = Math.max(1000, (r.left ?? 0) + d * 1000);
+  else r.endAt = Math.max(now + 1000, r.endAt + d * 1000);
+  r.lastCue = -1; renderRunOnly();
+}
+/** Skip move: no questions asked; reason chips appear in the player (optional). */
+function runSkip(){
+  const r = ui.run; if (!runActive()) return;
+  const ei = r.ei;
+  state.exercises = state.exercises.map((e, i) => {
+    if (i !== ei) return e;
+    const { skipReason, skipNote, ...rest } = e;
+    return {...rest, skipped: true, setsLog: e.setsLog.map(s => (s.ok || s.miss) ? s : {ok: false, miss: false})};
+  });
+  ui.run.skipped = { ei };
+  const ni = runNextAfter(ei);
+  if (ni < 0) runFinish(Date.now(), false);
+  else { runEnter("next", ni, 1, Date.now(), { gap: 5 }); cueHoldStart(); }
+  save(); render(); if (runActive()) runScrollTo(ui.run.ei);
+}
+function runSkipReason(reason){
+  const s = ui.run?.skipped; if (!s || !skipReasonId(reason)) return;
+  state.exercises = state.exercises.map((e, i) => i === s.ei && e.skipped ? {...e, skipReason: reason} : e);
+  ui.run.skipped = null; save(); render();
+}
+/** Back: within the first 3 s of a move (or between moves) → redo the previous move; later → restart this move. */
+function runBack(){
+  const r = ui.run; if (!runActive()) return;
+  const now = Date.now();
+  let target = r.ei;
+  const early = r.phase === "next" || (r.phase === "work" && r.side === 1 && now - (r.phaseAt || now) <= 3000);
+  if (early) target = Math.max(0, r.ei - (r.phase === "next" && r.si > 0 ? 0 : 1));
+  state.exercises = state.exercises.map((e, i) => {
+    if (i !== target && i !== r.ei) return e;
+    const { skipReason, skipNote, ...rest } = e;
+    if (i === target) return {...rest, skipped: false, setsLog: blankSets(e.sets)};
+    return {...e, setsLog: e.setsLog.map(s => (s.ok || s.miss) ? s : {ok: false, miss: false})};
+  });
+  ui.run.skipped = null;
+  runEnter("next", target, 1, now, { lead: true, si: 0 });
+  cueHoldStart();
+  save(); render(); runScrollTo(target);
+}
+function runEnsureTicker(){
+  const want = runActive() && !ui.run.paused;
+  if (want && !runTimer) runTimer = setInterval(runTick, 250);
+  else if (!want && runTimer) { clearInterval(runTimer); runTimer = null; }
+}
+async function runWake(on){
+  try {
+    if (on && navigator.wakeLock?.request) { if (!runLock) runLock = await navigator.wakeLock.request("screen"); }
+    else if (!on && runLock) { const l = runLock; runLock = null; await l.release(); }
+  } catch { runLock = null; }
+}
+function runScrollTo(ei){
+  try {
+    const id = state.exercises[ei]?.id; if (!id) return;
+    requestAnimationFrame(() => document.getElementById("ex-" + id)?.scrollIntoView({ behavior: "smooth", block: "center" }));
+  } catch {}
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible" || !runActive()) return;
+  runLock = null; if (!ui.run.paused) runWake(true);
+  runTick();
+});
+window.addEventListener("focus", () => { if (runActive()) runTick(); });
