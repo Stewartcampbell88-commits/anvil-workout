@@ -150,7 +150,7 @@ function setProgram(id, dayIndex=0){
   const program = getProgram(id);
   const day = Math.min(Math.max(0, dayIndex), program.days.length-1);
   const progress = captureProgress(state.exercises, state.liftProgress);
-  state = {...state, programId: program.id, dayIndex: day, liftProgress: progress, exercises: applyProgress(seedProgram(program.id, day), progress, program.id)};
+  state = {...state, programId: program.id, dayIndex: day, liftProgress: progress, exercises: applyDayOrder(applyProgress(seedProgram(program.id, day), progress, program.id), program.id, day)};
   clearExpandedEx();
   clockClear();
   save(); render();
@@ -162,19 +162,48 @@ function setDay(dayIndex){
   const progress = captureProgress(state.exercises, state.liftProgress);
   state.dayIndex = day;
   state.liftProgress = progress;
-  state.exercises = applyProgress(seedProgram(state.programId, day), progress, state.programId);
+  state.exercises = applyDayOrder(applyProgress(seedProgram(state.programId, day), progress, state.programId), state.programId, day);
   clearExpandedEx();
   clockClear();
   save(); render();
 }
-function addExercise(def){
+/** v57: at = insert index (0 = Top, length/undefined = End). Order is remembered per program + day. */
+function addExercise(def, at){
   if (state.exercises.some(e => e.id === def.id)) return false;
-  state.exercises = [...state.exercises, applyEdits(toExercise({...def, block: def.block || "Add-on"}), state.programId, state.exerciseEdits)];
+  const ex = applyEdits(toExercise({...def, block: def.block || "Add-on"}), state.programId, state.exerciseEdits);
+  const n = state.exercises.length;
+  const i = (typeof at === "number" && Number.isFinite(at)) ? Math.min(Math.max(0, Math.round(at)), n) : n;
+  state.exercises = [...state.exercises.slice(0, i), ex, ...state.exercises.slice(i)];
+  rememberDayOrder();
   save(); return true;
+}
+/** v57: move lift at index i by d (-1 up, +1 down). Lifting days only. */
+function moveExercise(i, d){
+  if (state.mobile) return false;
+  const j = i + d;
+  if (i < 0 || j < 0 || i >= state.exercises.length || j >= state.exercises.length) return false;
+  const list = [...state.exercises];
+  [list[i], list[j]] = [list[j], list[i]];
+  state.exercises = list;
+  rememberDayOrder();
+  save(); return true;
+}
+function dayOrderKey(){ return `${state.programId}:${state.dayIndex}`; }
+function rememberDayOrder(){
+  if (state.mobile) return;
+  state.dayOrder = {...sanitizeDayOrder(state.dayOrder), [dayOrderKey()]: state.exercises.map(e => e.id)};
+}
+/** Sort a freshly seeded day by the saved order; unknown lifts keep seed order at the end. */
+function applyDayOrder(list, programId, dayIndex){
+  const order = sanitizeDayOrder(state.dayOrder)[`${programId}:${dayIndex}`];
+  if (!order || !order.length) return list;
+  const rank = new Map(order.map((id, k) => [id, k]));
+  return list.map((e, k) => ({e, k, r: rank.has(e.id) ? rank.get(e.id) : order.length + k})).sort((a, b) => a.r - b.r).map(x => x.e);
 }
 function removeExercise(id){
   if (state.exercises.length <= 1) return false;
   state.exercises = state.exercises.filter(e => e.id !== id);
+  if (sanitizeDayOrder(state.dayOrder)[dayOrderKey()]) rememberDayOrder();
   save(); return true;
 }
 function logSession(){

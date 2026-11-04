@@ -70,16 +70,18 @@ document.getElementById("app").addEventListener("click", (e) => {
     const lift = LIBRARY.flatMap(g=>g.lifts).find(l=>l.id===btn.dataset.id);
     if (!lift) return;
     if (ui.pending?.id===lift.id) ui.pending=null;
-    else { ui.pending=lift; ui.pickSets=lift.sets; ui.pickReps=lift.reps; }
+    else { ui.pending=lift; ui.pickSets=lift.sets; ui.pickReps=lift.reps; ui.pickAt=null; }
     render();
   }
   else if (act==="sets") { ui.pickSets=+btn.dataset.n; render(); }
   else if (act==="reps") { ui.pickReps=+btn.dataset.n; render(); }
+  else if (act==="pick-at") { ui.pickAt = btn.dataset.at === "end" ? null : +btn.dataset.at; render(); }
+  else if (act==="move-ex") { moveExercise(+btn.dataset.i, +btn.dataset.d); render(); }
   else if (act==="confirm-add") {
     if (!ui.pending) return;
-    const ok = addExercise({...ui.pending, sets:ui.pickSets, reps:ui.pickReps});
+    const ok = addExercise({...ui.pending, sets:ui.pickSets, reps:ui.pickReps}, ui.pickAt ?? undefined);
     if (!ok) toast("Already in the session");
-    else { toast(`${ui.pending.name} · ${ui.pickSets}×${ui.pickReps}`); ui.pending=null; }
+    else { toast(`${ui.pending.name} · ${ui.pickSets}×${ui.pickReps}`); ui.pending=null; ui.pickAt=null; }
     render();
   }
   else if (act==="log") onLog();

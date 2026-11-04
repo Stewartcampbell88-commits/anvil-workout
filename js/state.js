@@ -183,6 +183,7 @@ function load(){
       loudCuesV33: true,
       exerciseEdits,
       mobilityLevels,
+      dayOrder: sanitizeDayOrder(raw.dayOrder),
       mobile: false,
       altExercises: hydrateMobility(raw.mobility?.exercises, exerciseEdits, mobilityLevels),
     };
@@ -193,6 +194,13 @@ function load(){
     rescueSaved(e);
     ui.loadFailed = true;
   }
+}
+/** v57 { "anvil:0": [ids…] } — only string-array values kept. */
+function sanitizeDayOrder(o){
+  const out = {};
+  if (!o || typeof o !== "object" || Array.isArray(o)) return out;
+  for (const [k, v] of Object.entries(o)) if (/^[\w-]+:\d+$/.test(k) && Array.isArray(v)) out[k] = v.filter(x => typeof x === "string").slice(0, 60);
+  return out;
 }
 function save(){
   try { saveState(); }
@@ -208,6 +216,7 @@ function saveState(){
     loudCuesV33: true, anvilLayoutV38: true, anvilXrdlV49: true, neckIsoV50: true,
     exerciseEdits: sanitizeEdits(state.exerciseEdits),
     mobilityLevels: sanitizeMobLevels(state.mobilityLevels),
+    dayOrder: sanitizeDayOrder(state.dayOrder),
   }));
 }
 
@@ -234,6 +243,7 @@ function backupPayload(){
     loudCuesV33: true,
     exerciseEdits: sanitizeEdits(state.exerciseEdits),
     mobilityLevels: sanitizeMobLevels(state.mobilityLevels),
+    dayOrder: sanitizeDayOrder(state.dayOrder),
   };
 }
 
@@ -387,6 +397,7 @@ function applyBackup(raw){
         loudCuesV33: true,
         exerciseEdits: sanitizeEdits(raw.exerciseEdits), // older backups have none → {}
         mobilityLevels: sanitizeMobLevels(raw.mobilityLevels), // v55; older backups have none → all Medium
+        dayOrder: sanitizeDayOrder(raw.dayOrder), // v57
         ...(raw.mobility && typeof raw.mobility === "object" && Array.isArray(raw.mobility.exercises) ? { mobility: { active: raw.mobility.active === true, exercises: raw.mobility.exercises } } : {}),
       }));
       if (Array.isArray(raw.walks)) {

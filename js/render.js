@@ -142,7 +142,7 @@ function render(){
         ${sets}
         <div style="margin-top:.25rem;display:flex;justify-content:space-between;align-items:center">
           <button class="ex-edit" data-act="edit-ex" data-i="${ei}" aria-label="Edit ${esc(ex.name)}">${I.pencil}<span>Edit</span></button>
-          <button class="skip${ex.skipped?" on":""}" data-act="skip" data-i="${ei}">${ex.skipped?"Unskip":"Skip"}</button>
+          <span style="display:flex;gap:.25rem;align-items:center">${ex.mobility || state.mobile ? "" : `<button class="icon-btn move-btn" data-act="move-ex" data-i="${ei}" data-d="-1" aria-label="Move ${esc(ex.name)} up"${ei===0?" disabled":""}>↑</button><button class="icon-btn move-btn" data-act="move-ex" data-i="${ei}" data-d="1" aria-label="Move ${esc(ex.name)} down"${ei===state.exercises.length-1?" disabled":""}>↓</button>`}<button class="skip${ex.skipped?" on":""}" data-act="skip" data-i="${ei}">${ex.skipped?"Unskip":"Skip"}</button></span>
         </div>
       </article>`;
   }).join("");
@@ -166,6 +166,7 @@ function render(){
         return `<div style="margin-top:.375rem"><button class="lift${open?" on":""}" data-act="pick" data-id="${lift.id}">${esc(lift.name)}</button>${
           open ? `<div class="picker"><p class="tiny" style="margin-bottom:.375rem">Sets</p><div class="chips">${SET_OPTS.map(n=>`<button class="chip${n===ui.pickSets?" on":""}" data-act="sets" data-n="${n}">${n}</button>`).join("")}</div>
             <p class="tiny" style="margin:.75rem 0 .375rem">${lab}</p><div class="chips">${opts.map(n=>`<button class="chip${n===ui.pickReps?" on":""}" data-act="reps" data-n="${n}">${n}</button>`).join("")}</div>
+            <p class="tiny" style="margin:.75rem 0 .375rem">Place</p><div class="chips place" data-place>${[["0","Top"], ...state.exercises.slice(0,-1).map((e,k)=>[String(k+1), `After ${e.name}`]), ["end","End"]].map(([at,lab])=>`<button class="chip${(at==="end" ? ui.pickAt==null : ui.pickAt===+at)?" on":""}" data-act="pick-at" data-at="${at}">${esc(lab)}</button>`).join("")}</div>
             <button class="split" style="width:100%;margin-top:.75rem"><span class="primary" style="display:flex;width:100%;min-height:2.75rem;border-radius:.75rem;align-items:center;justify-content:center;font-weight:700" data-act="confirm-add">Add ${ui.pickSets}×${ui.pickReps}</span></button></div>` : ""
         }</div>`;
       }).join("")}</div>`;
