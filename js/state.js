@@ -157,6 +157,23 @@ function load(){
         baseExs = [...baseExs.slice(0, at), toExercise({...seedNeck}), ...baseExs.slice(at)];
       }
     }
+    // ANVIL Day B v58: Psoas sit-up replaces Psoas march in the same slot (one-shot).
+    // Old psoas progress + history stay untouched (liftProgress.psoas is never deleted).
+    let psoasSitupChanged = false;
+    let dayOrder = sanitizeDayOrder(raw.dayOrder);
+    if (program.id === "anvil" && raw.anvilPsoasSitupV58 !== true) {
+      psoasSitupChanged = true;
+      if (seedById["psoas-situp"] && !baseExs.some(e => e.id === "psoas-situp")) {
+        const i = baseExs.findIndex(e => e.id === "psoas");
+        if (i >= 0) baseExs = [...baseExs.slice(0, i), toExercise({...seedById["psoas-situp"]}), ...baseExs.slice(i + 1)];
+      }
+      // Remap any saved Day B order that still names the old march id.
+      for (const [k, ids] of Object.entries(dayOrder)) {
+        if (!k.startsWith("anvil:")) continue;
+        if (!ids.includes("psoas") || ids.includes("psoas-situp")) continue;
+        dayOrder = {...dayOrder, [k]: ids.map(id => id === "psoas" ? "psoas-situp" : id)};
+      }
+    }
     // ANVIL v38 layout: reorder current day to seed order (Single-leg RDL A, Back extension last on A+B); keep extra add-ons after
     let layoutChanged = false;
     if (program.id === "anvil" && raw.anvilLayoutV38 !== true) {
@@ -183,11 +200,11 @@ function load(){
       loudCuesV33: true,
       exerciseEdits,
       mobilityLevels,
-      dayOrder: sanitizeDayOrder(raw.dayOrder),
+      dayOrder,
       mobile: false,
       altExercises: hydrateMobility(raw.mobility?.exercises, exerciseEdits, mobilityLevels),
     };
-    if (normalizeWaveTargets() || needsCueMigration || layoutChanged || xrdlChanged || neckChanged) save();
+    if (normalizeWaveTargets() || needsCueMigration || layoutChanged || xrdlChanged || neckChanged || psoasSitupChanged) save();
     // Re-open Mobility if the app was closed mid-mobility (ANVIL only)
     if (raw.mobility?.active === true && program.id === "anvil") swapMobility(true);
   } catch (e) {
@@ -213,7 +230,7 @@ function saveState(){
     bodyWeightLog: state.bodyWeightLog || [],
     soundVolume: clampVolume(state.soundVolume), cuePack: normalizeCuePack(state.cuePack),
     mobility: mobilityBlob(),
-    loudCuesV33: true, anvilLayoutV38: true, anvilXrdlV49: true, neckIsoV50: true,
+    loudCuesV33: true, anvilLayoutV38: true, anvilXrdlV49: true, neckIsoV50: true, anvilPsoasSitupV58: true,
     exerciseEdits: sanitizeEdits(state.exerciseEdits),
     mobilityLevels: sanitizeMobLevels(state.mobilityLevels),
     dayOrder: sanitizeDayOrder(state.dayOrder),

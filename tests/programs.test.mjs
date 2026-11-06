@@ -12,7 +12,7 @@ test("ANVIL Day A / Day B lists (Back extension (twist) then Neck isometric extr
   const d = await days("anvil");
   assert.deepEqual(d.map((x) => x.label), ["A", "B"]);
   assert.deepEqual(d[0].ids, ["squat", "bench", "row", "xrdl", "cossack", "sgm", "bext", "neck"]);
-  assert.deepEqual(d[1].ids, ["rdl", "ohp", "lunge", "psoas", "lmr", "heaves", "bext", "neck"]);
+  assert.deepEqual(d[1].ids, ["rdl", "ohp", "lunge", "psoas-situp", "lmr", "heaves", "bext", "neck"]);
   assert.equal(d[0].names[6], "Back extension (twist)");
   assert.equal(d[1].names[6], "Back extension (twist)");
 });
