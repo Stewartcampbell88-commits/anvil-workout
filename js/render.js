@@ -339,6 +339,21 @@ ${restorePinField(".6rem")}
       </div>
     </div>
   </div></div>` : "";
+  const romCur = ui.panel==="rom-ask" && ui.romAsk ? ui.romAsk.queue[ui.romAsk.idx] : null;
+  const romAsk = romCur ? `<div class="settings-sheet" role="dialog" aria-modal="true" aria-label="Range of motion"><div class="settings-sheet-inner">
+    <div class="settings-head"><h2>Range of motion</h2><button class="icon-btn" data-act="rom-cancel" aria-label="Close">${I.x}</button></div>
+    <div class="settings-body" style="justify-content:center">
+      ${ui.romAsk.queue.length > 1 ? `<p class="tiny" style="text-align:center;margin:0 0 .5rem">${ui.romAsk.idx + 1} of ${ui.romAsk.queue.length}</p>` : ""}
+      <p class="note" style="text-align:center;margin:0 0 .4rem;color:var(--fg);font-size:1.15rem"><b>${esc(romCur.name)}</b></p>
+      <p class="note" style="text-align:center;margin:0 0 1rem">Ready to go up: ${fmtKg(romCur.from)} → ${fmtKg(romCur.to)} kg</p>
+      <p class="note" data-rom-q style="text-align:center;margin:0 0 1rem;color:var(--fg);font-size:1.3rem;font-weight:700">${ROM_QUESTION}</p>
+      <p class="note" style="text-align:center;margin:0 0 1rem">No = the weight stays and I’ll ask again next time. Full range beats more weight.</p>
+      <div class="split" style="margin-top:1rem;gap:.75rem">
+        <button class="primary" data-act="rom-yes" style="flex:1">Yes</button>
+        <button data-act="rom-no" style="flex:1">No</button>
+      </div>
+    </div>
+  </div></div>` : "";
   const bodyweight = ui.panel==="bodyweight" ? `<div class="settings-sheet" role="dialog" aria-modal="true" aria-label="Body weight"><div class="settings-sheet-inner">
     <div class="settings-head"><h2>Body weight</h2><button class="icon-btn" data-act="skip-bw" aria-label="Close">${I.x}</button></div>
     <div class="settings-body" style="justify-content:center">
@@ -442,6 +457,7 @@ ${restorePinField(".5rem")}
       </div>
     </header>
     ${onWalk ? (updateBanner + hint + renderWalkBody()) : workoutBody}
+    ${romAsk}
     ${balanceHold}
     ${bodyweight}
     ${skipAsk}

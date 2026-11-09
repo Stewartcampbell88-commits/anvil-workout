@@ -206,16 +206,35 @@ function removeExercise(id){
   if (sanitizeDayOrder(state.dayOrder)[dayOrderKey()]) rememberDayOrder();
   save(); return true;
 }
-function logSession(){
+/** v59 range-of-motion gate. opts.rom = { [liftId]: true|false } answers to "Full range of motion on every rep?".
+ *  false → the kg stays (reps/target kept), streak stays at 3 so the next clean session asks again.
+ *  Missing answer = go ahead (old callers / tests). opts.dry → returns the lifts that would gain kg, changes nothing. */
+const ROM_QUESTION = "Full range of motion on every rep?";
+const ROM_HOLD_MSG = "Weight stays. Full range beats more weight.";
+function logSession(opts = {}){
+  const rom = (opts && typeof opts.rom === "object" && opts.rom) || {};
+  const dry = !!opts?.dry;
+  const romAsks = [];
   const notes = [];
   const lifts = [];
   const balanceHolds = [];
   const sessionExs = state.exercises;
   const progressSnap = state.liftProgress || {};
   const programId = state.programId;
-  /** Apply a +kg bump or hold for balance. On hold: keep weight + reps, streak stays at 3 so next clean retries. */
+  /** ROM first: would-be kg increase on a lift answered "No" → hold. In a dry run, collect the question instead. */
+  function romHold(ex, nextWeight){
+    const from = Number(ex.weight) || 0, to = +Number(nextWeight).toFixed(2);
+    if (!(to > from)) return false;
+    if (dry) { if (!romAsks.some(a => a.id === ex.id)) romAsks.push({ id: ex.id, name: ex.name, from, to }); return false; }
+    if (rom[ex.id] !== false) return false;
+    notes.push(`${ex.name}: ${ROM_HOLD_MSG} Stays ${fmtKg(from)} kg × ${ex.reps} — asks again next time`);
+    return true;
+  }
+  /** Apply a +kg bump, hold for range of motion, or hold for balance. On hold: keep weight + reps, streak stays at 3 so next clean retries. */
   function takeKgBump(ex, nextWeight, nextReps, streakAfterOk, successNote){
+    // Chain-held lifts don't move anyway — no ROM question for them.
     const hold = balanceKgHold(programId, ex, nextWeight, sessionExs, progressSnap);
+    if (!hold && romHold(ex, nextWeight)) return { weight: ex.weight, reps: ex.reps, streak: 3, held: true, rom: true };
     if (hold) {
       notes.push(`${ex.name}: held for balance — stays ${hold.weight} kg until ${hold.ceilingName} moves up (now ${hold.ceilingWeight} kg)`);
       balanceHolds.push(hold);
@@ -309,7 +328,9 @@ function logSession(){
           const idx = levelIndex;
           const stage = BENCH_STAGES[Math.min(idx, BENCH_STAGES.length-1)];
           const last = idx >= BENCH_STAGES.length - 1;
-          if (!last && !stage.useBar && reps >= topRung && weight >= 10) {
+          if (!last && !stage.useBar && reps >= topRung && weight >= 10 && romHold(ex, BENCH_STAGES[idx + 1].startWeight)) {
+            streak = 3;
+          } else if (!last && !stage.useBar && reps >= topRung && weight >= 10) {
             levelIndex = idx + 1;
             const nextStage = BENCH_STAGES[levelIndex];
             reps = nextStage.startReps; weight = nextStage.startWeight;
@@ -351,8 +372,11 @@ function logSession(){
           } else {
             // Heave ladder kg bumps are skipped from the balance chain (BW / no clear ceiling)
             const step = nextWaveStep(reps, weight, ex);
-            reps = step.reps; weight = step.weight; streak = 0;
-            notes.push(`${ex.name}: ${step.note}`);
+            if (step.weight > weight && romHold(ex, step.weight)) streak = 3;
+            else {
+              reps = step.reps; weight = step.weight; streak = 0;
+              notes.push(`${ex.name}: ${step.note}`);
+            }
           }
         }
       } else if (isCossackLadder(ex)) {
@@ -380,7 +404,9 @@ function logSession(){
         const last = idx >= BENCH_STAGES.length - 1;
         const atTopWave = reps >= topRung;
         // 3 clean at 3×12 with plate weight ≥ 10 kg → Bench Press 3×6 @ 20 kg
-        if (!last && !stage.useBar && atTopWave && weight >= 10) {
+        if (!last && !stage.useBar && atTopWave && weight >= 10 && romHold(ex, BENCH_STAGES[idx + 1].startWeight)) {
+          streak = 3;
+        } else if (!last && !stage.useBar && atTopWave && weight >= 10) {
           levelIndex = idx + 1;
           const nextStage = BENCH_STAGES[levelIndex];
           reps = nextStage.startReps; weight = nextStage.startWeight; streak = 0;
@@ -475,6 +501,7 @@ function logSession(){
     } else notes.push(`${ex.name}: clean ${streak}/3 at ${reps}`);
     return {...ex, streak, failStreak:0, reps, weight, levelIndex, setsLog: blankSets(ex.sets)};
   });
+  if (dry) return romAsks;
   state.exercises = exercises;
   state.liftProgress = captureProgress(exercises, state.liftProgress);
   const dayLabel = getProgram(programId)?.days?.[state.dayIndex]?.label || "";
@@ -650,12 +677,38 @@ function onLog(){
   if (startedOpen) { toast("Finish or skip the lifts you started"); return; }
   const anyWork = state.exercises.some(ex => !ex.skipped && ex.setsLog.some(s => s.ok || s.miss));
   if (!anyWork) { toast("Tick a set first — blank lifts are skipped"); return; }
-  const notes = logSession();
+  // v59: ask "Full range of motion on every rep?" for each lift about to gain kg — before anything is logged.
+  const asks = logSession({ dry: true });
+  if (asks.length) {
+    ui.romAsk = { queue: asks, idx: 0, answers: {} };
+    ui.panel = "rom-ask";
+    render();
+    return;
+  }
+  finishLog({});
+}
+/** Yes / No on the current ROM question; after the last one the session is logged with the answers. */
+function answerRom(yes){
+  const ask = ui.romAsk;
+  if (!ask || !ask.queue[ask.idx]) return;
+  const cur = ask.queue[ask.idx];
+  const answers = {...ask.answers, [cur.id]: !!yes};
+  if (!yes) toast(ROM_HOLD_MSG, `${cur.name} stays at ${fmtKg(cur.from)} kg`);
+  if (ask.idx + 1 < ask.queue.length) { ui.romAsk = {...ask, idx: ask.idx + 1, answers}; render(); return; }
+  ui.romAsk = null; ui.panel = "none";
+  finishLog(answers);
+}
+/** Close (✕) on the ROM sheet: nothing is logged; back to the session. */
+function cancelRom(){ ui.romAsk = null; ui.panel = "none"; render(); }
+function finishLog(rom){
+  const notes = logSession({ rom });
   const program = getProgram(state.programId);
   if (program.days.length > 1) {
     setDay((state.dayIndex + 1) % program.days.length);
   }
-  toast("Session logged", notes.slice(0,3).join(" · "));
+  const romHeld = Object.entries(rom || {}).filter(([, ok]) => ok === false).map(([id]) => state.history[0]?.lifts?.find(l => l.id === id)?.name || id);
+  if (romHeld.length) toast("Session logged", `${ROM_HOLD_MSG} ${romHeld.join(", ")}: same kg next time.`);
+  else toast("Session logged", notes.slice(0,3).join(" · "));
   clearExpandedEx();
   stopRest();
   if (ui.pendingHolds?.length) {

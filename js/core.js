@@ -7,7 +7,7 @@ const ANVIL_PREVIEW = /\/(anvil-)?preview\//.test(location.pathname);
 const PREVIEW_PREFIX = "anvil-preview:";
 function K(key){ return ANVIL_PREVIEW ? PREVIEW_PREFIX + key : key; }
 const STORAGE = K("anvil_app_v3");
-const APP_VERSION = "anvil-v58";
+const APP_VERSION = "anvil-v59";
 const CUE_LOUDNESS = 2.4;
 const CUE_MAX_GAIN = 0.95;
 const SET_OPTS = [1,2,3,4,5];
@@ -298,16 +298,21 @@ const PROGRAMS = [
       bw("tp-plank","Plank",3,20,45,"Day B",{cap:45,note:"Seconds, not reps. Knees down if needed."}),
     ]},
   ]},
-  {id:"ember", name:"EMBER", blurb:"Beginner 3× week. Wave 6→8→10→12 then +2.5kg. Day B heaves: hang → feet assist → negatives → full (auto-graduate).", days:[
+  {id:"ember", name:"EMBER", blurb:"Beginner 3× week. Wave 6→8→10→12 then +2.5kg. Cossack ladder on A; Bulgarian split squat on B. Day B heaves: hang → feet assist → negatives → full (auto-graduate).", days:[
     {label:"A", exercises:[
       bb("em-squat","Squat",3,6,75,"Day A",{weight:0,cap:12,note:"Sit to a chair if needed. Hold a plate when ready."}),
       bb("em-bench","Bench Press",3,6,90,"Day A",{weight:20,cap:10,note:"Empty bar first if needed. Feet planted, lower to chest, press up."}),
       bb("em-row","Bent over row",3,6,60,"Day A",{weight:2.5,cap:14,note:"2.5 kg plates. Hinge, pull to ribs, lower slow."}),
+      bw("em-cossack", COSSACK_STAGES[0].name, 3, COSSACK_STAGES[0].startReps, 45, "Day A", {
+        bilateral:true, cossackLadder:true, levels: COSSACK_STAGES.map(s=>s.name), levelIndex:0,
+        note: COSSACK_STAGES[0].note
+      }),
       bw("em-deadbug","Dead bug",3,6,45,"Day A",{bilateral:true,cap:12,note:"Lower back glued to the floor. Opposite arm and leg."}),
       bw("em-neck","Neck isometric (4-way)",2,NECK_START,30,"Day A",{finisher:true,neckIso:true,note:NECK_NOTE}),
     ]},
     {label:"B", exercises:[
       bb("em-rdl","Plate RDL",3,6,75,"Day B",{weight:2.5,cap:12,note:"2.5 kg plates in both hands. Soft knees, hips back, flat back."}),
+      bw("em-bss","Bulgarian split squat",3,6,75,"Day B",{cap:12,bilateral:true,note:"Rear foot on a bench, front foot well forward. Drop the back knee straight down, drive up through the front heel. Each side. Bodyweight first — hold plates when 3×12 is clean."}),
       bb("em-press","Overhead press",3,6,60,"Day B",{weight:2.5,cap:12,note:"2.5 kg plates. Press overhead, don’t shrug."}),
       bw("em-heaves", HEAVE_STAGES[0].name, 3, HEAVE_STAGES[0].startReps, 90, "Day B", {
         nocap:true, heaveLadder:true, levels: HEAVE_STAGES.map(s=>s.name), levelIndex:0,

@@ -86,7 +86,7 @@ test("Stewart on Day B: switching to Day A shows the new lift; slrdl progress su
 });
 
 test("EMBER / TITAN saves are untouched by the v49 migration", async () => {
-  for (const [pid, day, ids] of [["ember", 0, ["em-squat", "em-bench", "em-row", "em-deadbug", "em-neck"]], ["titan", 0, ["tp-squat", "tp-bench", "tp-row", "tp-deadbug"]]]) {
+  for (const [pid, day, ids] of [["ember", 0, ["em-squat", "em-bench", "em-row", "em-cossack", "em-deadbug", "em-neck"]], ["titan", 0, ["tp-squat", "tp-bench", "tp-row", "tp-deadbug"]]]) {
     const app = await openApp(srv.url, { storage: { [KEYS.STATE]: { programId: pid, dayIndex: day, exercises: [], history: [], liftProgress: {} } } });
     const s = await ls(app.page, KEYS.STATE);
     assert.deepEqual(s.exercises.map((e) => e.id), ids);

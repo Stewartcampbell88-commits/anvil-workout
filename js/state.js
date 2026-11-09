@@ -174,6 +174,37 @@ function load(){
         dayOrder = {...dayOrder, [k]: ids.map(id => id === "psoas" ? "psoas-situp" : id)};
       }
     }
+    // EMBER v59: Cossack (ladder) joins Day A right after the row; Bulgarian split squat joins Day B right after
+    // the Plate RDL (one-shot). Nothing is removed; logs, progress and custom order stay, the two new lifts start fresh.
+    let emberSplitChanged = false;
+    if (raw.emberSplitV59 !== true) {
+      emberSplitChanged = true;
+      const adds = [["em-cossack", "em-row", 0], ["em-bss", "em-rdl", 1]];
+      if (program.id === "ember") {
+        for (const [nid, afterId, day] of adds) {
+          if (day !== dayIndex || !seedById[nid] || baseExs.some(e => e.id === nid)) continue;
+          const after = baseExs.findIndex(e => e.id === afterId);
+          let at;
+          if (after >= 0) at = after + 1;
+          else {
+            // Anchor missing (removed by the user): sit before the next seed lift that is still there, else after the programmed lifts.
+            const seedIds = seeded.map(e => e.id), k = seedIds.indexOf(nid);
+            const nextHere = seedIds.slice(k + 1).map(id => baseExs.findIndex(e => e.id === id)).find(i => i >= 0);
+            if (nextHere != null) at = nextHere;
+            else { const ids = new Set(seedIds); at = 0; baseExs.forEach((e, i) => { if (ids.has(e.id)) at = i + 1; }); }
+          }
+          baseExs = [...baseExs.slice(0, at), toExercise({...seedById[nid]}), ...baseExs.slice(at)];
+        }
+      }
+      // Saved custom order (v57) for either EMBER day: slot the new lift in after its anchor so day switches keep it there.
+      for (const [nid, afterId, day] of adds) {
+        const k = `ember:${day}`, ids = dayOrder[k];
+        if (!ids || ids.includes(nid)) continue;
+        const a = ids.indexOf(afterId);
+        const at = a >= 0 ? a + 1 : ids.length;
+        dayOrder = {...dayOrder, [k]: [...ids.slice(0, at), nid, ...ids.slice(at)]};
+      }
+    }
     // ANVIL v38 layout: reorder current day to seed order (Single-leg RDL A, Back extension last on A+B); keep extra add-ons after
     let layoutChanged = false;
     if (program.id === "anvil" && raw.anvilLayoutV38 !== true) {
@@ -204,7 +235,7 @@ function load(){
       mobile: false,
       altExercises: hydrateMobility(raw.mobility?.exercises, exerciseEdits, mobilityLevels),
     };
-    if (normalizeWaveTargets() || needsCueMigration || layoutChanged || xrdlChanged || neckChanged || psoasSitupChanged) save();
+    if (normalizeWaveTargets() || needsCueMigration || layoutChanged || xrdlChanged || neckChanged || psoasSitupChanged || emberSplitChanged) save();
     // Re-open Mobility if the app was closed mid-mobility (ANVIL only)
     if (raw.mobility?.active === true && program.id === "anvil") swapMobility(true);
   } catch (e) {
@@ -230,7 +261,7 @@ function saveState(){
     bodyWeightLog: state.bodyWeightLog || [],
     soundVolume: clampVolume(state.soundVolume), cuePack: normalizeCuePack(state.cuePack),
     mobility: mobilityBlob(),
-    loudCuesV33: true, anvilLayoutV38: true, anvilXrdlV49: true, neckIsoV50: true, anvilPsoasSitupV58: true,
+    loudCuesV33: true, anvilLayoutV38: true, anvilXrdlV49: true, neckIsoV50: true, anvilPsoasSitupV58: true, emberSplitV59: true,
     exerciseEdits: sanitizeEdits(state.exerciseEdits),
     mobilityLevels: sanitizeMobLevels(state.mobilityLevels),
     dayOrder: sanitizeDayOrder(state.dayOrder),

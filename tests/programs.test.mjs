@@ -19,8 +19,8 @@ test("ANVIL Day A / Day B lists (Back extension (twist) then Neck isometric extr
 
 test("EMBER Day A / Day B lists", async () => {
   const d = await days("ember");
-  assert.deepEqual(d[0].ids, ["em-squat", "em-bench", "em-row", "em-deadbug", "em-neck"]);
-  assert.deepEqual(d[1].ids, ["em-rdl", "em-press", "em-heaves", "em-plank", "em-neck"]);
+  assert.deepEqual(d[0].ids, ["em-squat", "em-bench", "em-row", "em-cossack", "em-deadbug", "em-neck"]);
+  assert.deepEqual(d[1].ids, ["em-rdl", "em-bss", "em-press", "em-heaves", "em-plank", "em-neck"]);
 });
 
 test("TITAN Day A / Day B lists", async () => {

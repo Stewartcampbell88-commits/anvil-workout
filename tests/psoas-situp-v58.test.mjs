@@ -55,7 +55,7 @@ test("ANVIL Day B program: Psoas sit-up in the old march slot; EMBER / TITAN unc
   assert.equal(r.sit.rest, 45);
   assert.equal(r.sit.cap, 12);
   assert.equal(r.sit.weight, 0);
-  assert.deepEqual(r.ember, [["em-squat", "em-bench", "em-row", "em-deadbug", "em-neck"], ["em-rdl", "em-press", "em-heaves", "em-plank", "em-neck"]]);
+  assert.deepEqual(r.ember, [["em-squat", "em-bench", "em-row", "em-cossack", "em-deadbug", "em-neck"], ["em-rdl", "em-bss", "em-press", "em-heaves", "em-plank", "em-neck"]]);
   assert.deepEqual(r.titan, [["tp-squat", "tp-bench", "tp-row", "tp-deadbug"], ["tp-rdl", "tp-press", "tp-lunge", "tp-heaves", "tp-plank"]]);
   await app.close();
 });

@@ -521,7 +521,7 @@ const HOWTO_ALIAS = {
   "em-squat":"squat","tp-squat":"squat","em-bench":"bench","tp-bench":"bench","em-row":"row","tp-row":"row",
   "em-rdl":"rdl","tp-rdl":"rdl","em-press":"ohp","tp-press":"ohp","tp-lunge":"reverse-lunge","split-squat":"lunge",
   "em-heaves":"heaves","tp-heaves":"heaves","em-plank":"plank","tp-plank":"plank",
-  "em-deadbug":"dead-bug","em-neck":"neck","tp-deadbug":"dead-bug","single-rdl":"slrdl",
+  "em-deadbug":"dead-bug","em-cossack":"cossack","em-bss":"lunge","em-neck":"neck","tp-deadbug":"dead-bug","single-rdl":"slrdl",
 };
 const HOWTO_ANIM_OVERRIDE = { "em-rdl":"rdlplates","tp-rdl":"rdlplates","em-press":"ohpplates","tp-press":"ohpplates","em-row":"rowplates","tp-row":"rowplates" };
 const HOWTO_LADDERS = {

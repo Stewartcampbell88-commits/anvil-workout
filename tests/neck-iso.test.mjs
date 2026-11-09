@@ -110,7 +110,7 @@ test("EMBER (Alexis) Day A + B saves get em-neck; TITAN untouched; existing neck
   const em = (dayIndex, exercises) => ({ programId: "ember", dayIndex, exercises, history: [{ date: "2026-10-20T08:00:00.000Z", programId: "ember", day: "B", notes: ["x"], lifts: [] }], liftProgress: { "em-squat": { reps: 8, weight: 5, streak: 1, failStreak: 0 }, "em-neck": { reps: 15, weight: 0, streak: 0, failStreak: 1 } } });
   const dayA = [{ id: "em-squat", name: "Squat", sets: 3, reps: 8, rest: 75, weight: 5, block: "Day A" }, { id: "em-bench", name: "Bench Press", sets: 3, reps: 6, rest: 90, weight: 20, block: "Day A" }, { id: "em-row", name: "Bent over row", sets: 3, reps: 6, rest: 60, weight: 2.5, block: "Day A" }, { id: "em-deadbug", name: "Dead bug", sets: 3, reps: 6, rest: 45, weight: 0, bw: true, bilateral: true, block: "Day A" }];
   const dayB = [{ id: "em-rdl", name: "Plate RDL", sets: 3, reps: 6, rest: 75, weight: 2.5, block: "Day B" }, { id: "em-press", name: "Overhead press", sets: 3, reps: 6, rest: 60, weight: 2.5, block: "Day B" }, { id: "em-plank", name: "Plank", sets: 3, reps: 30, rest: 45, weight: 0, bw: true, block: "Day B", note: "Seconds, not reps." }];
-  for (const [d, exs, ids] of [[0, dayA, ["em-squat", "em-bench", "em-row", "em-deadbug", "em-neck"]], [1, dayB, ["em-rdl", "em-press", "em-plank", "em-neck"]]]) {
+  for (const [d, exs, ids] of [[0, dayA, ["em-squat", "em-bench", "em-row", "em-cossack", "em-deadbug", "em-neck"]], [1, dayB, ["em-rdl", "em-bss", "em-press", "em-plank", "em-neck"]]]) {
     const raw = em(d, exs);
     const app = await openApp(srv.url, { storage: { [KEYS.STATE]: raw } });
     const s = await ls(app.page, KEYS.STATE);
