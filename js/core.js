@@ -7,7 +7,7 @@ const ANVIL_PREVIEW = /\/(anvil-)?preview\//.test(location.pathname);
 const PREVIEW_PREFIX = "anvil-preview:";
 function K(key){ return ANVIL_PREVIEW ? PREVIEW_PREFIX + key : key; }
 const STORAGE = K("anvil_app_v3");
-const APP_VERSION = "anvil-v59";
+const APP_VERSION = "anvil-v60";
 const CUE_LOUDNESS = 2.4;
 const CUE_MAX_GAIN = 0.95;
 const SET_OPTS = [1,2,3,4,5];
@@ -244,6 +244,9 @@ function normalizeWaveTargets(){
   return changed;
 }
 
+/** v60 ANVIL Day B: double-leg psoas sit-up (both feet hooked, one set = both legs, no switch-sides). Id stays psoas-situp. */
+const PSOAS_DOUBLE_NAME = "Double-leg psoas sit-up";
+const PSOAS_DOUBLE_NOTE = "Lie on a bench or floor. Hook both feet (under a bar, KB, strap or partner). Knees slightly bent. Sit up by flexing at the hips, keep the back long; lower with control.";
 function bb(id,name,sets,reps,rest,block,extra={}) {
   return {id,name,sets,reps,rest,weight: extra.weight ?? 20, block, ...extra};
 }
@@ -270,7 +273,7 @@ const PROGRAMS = [
       bb("rdl","RDL",3,8,120,"Day B"),
       bb("ohp","Overhead press",3,8,90,"Day B"),
       bw("lunge","Bulgarian split squat",3,8,75,"Day B",{cap:12,bilateral:true}),
-      bw("psoas-situp","Psoas sit-up",3,8,45,"Day B",{cap:12,bilateral:true,note:"Lie on a bench. Hug one knee to the chest. Hook the working foot (KB handle, dumbbell, strap, or just hang). Sit up by flexing that hip; lower with control. Each side."}),
+      bw("psoas-situp",PSOAS_DOUBLE_NAME,3,8,45,"Day B",{cap:12,bilateral:false,note:PSOAS_DOUBLE_NOTE}),
       bw("lmr","Landmine rotation",3,8,60,"Day B",{cap:12,bilateral:true}),
       bw("heaves","Heaves",3,6,120,"Day B",{nocap:true,note:"Pull-ups or chin-ups. Clean reps; assist if needed."}),
       bw("bext","Back extension (twist)",3,10,60,"Day B",{finisher:true,note:"Rise, rotate to one side at the top, alternate sides each rep; slow, pause at top. Bodyweight, no kg."}),
@@ -388,7 +391,8 @@ const LIBRARY = [
     bw("situp","Sit-ups",3,12,45,"Add-on",{nocap:true}),
     bw("knee-raise","Hanging knee raise",3,10,60,"Add-on",{cap:16}),
     bw("psoas","Psoas march",3,8,45,"Add-on",{bilateral:true,cap:12}),
-    bw("psoas-situp","Psoas sit-up",3,8,45,"Add-on",{bilateral:true,cap:12,note:"Lie on a bench. Hug one knee to the chest. Hook the working foot (KB handle, dumbbell, strap, or just hang). Sit up by flexing that hip; lower with control. Each side."}),
+    bw("psoas-situp",PSOAS_DOUBLE_NAME,3,8,45,"Add-on",{bilateral:false,cap:12,note:PSOAS_DOUBLE_NOTE}),
+    bw("psoas-situp-single","Psoas sit-up",3,8,45,"Add-on",{bilateral:true,cap:12,note:"Lie on a bench. Hug one knee to the chest. Hook the working foot (KB handle, dumbbell, strap, or just hang). Sit up by flexing that hip; lower with control. Each side."}),
     bw("lmr","Landmine rotation",3,8,60,"Add-on",{bilateral:true,cap:12}),
     bw("abd","Side-lying abduction",3,12,45,"Add-on",{bilateral:true,cap:16,note:"Extra on the right"}),
     bb("farmer","Farmer carry",3,40,60,"Add-on",{cap:60,note:"Metres per set"}),

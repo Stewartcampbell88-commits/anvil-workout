@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { startServer, openApp, closeBrowser, ls, reload } from "./helpers.mjs";
 import { KEYS, stewartState, anvilProgress } from "./fixtures.mjs";
 
-const NAME = "Psoas sit-up";
+const NAME = "Double-leg psoas sit-up"; // v60 renamed the Day B lift (same id)
 let srv;
 before(async () => { srv = await startServer(); });
 after(async () => { srv?.server.close(); await closeBrowser(); });
@@ -49,7 +49,7 @@ test("ANVIL Day B program: Psoas sit-up in the old march slot; EMBER / TITAN unc
   assert.equal(r.anyMarch, false);
   assert.equal(r.sit.name, NAME);
   assert.equal(r.sit.bw, true);
-  assert.equal(r.sit.bilateral, true);
+  assert.equal(r.sit.bilateral, false);
   assert.equal(r.sit.sets, 3);
   assert.equal(r.sit.reps, 8);
   assert.equal(r.sit.rest, 45);
@@ -72,10 +72,10 @@ test("Add-a-lift has both Psoas march and Psoas sit-up; how-to present for sit-u
   });
   assert.equal(lib.march.name, "Psoas march");
   assert.equal(lib.sit.name, NAME);
-  assert.equal(lib.sit.bilateral, true);
+  assert.equal(lib.sit.bilateral, false);
   assert.ok(lib.howto);
   const all = [...lib.howto.cues, ...lib.howto.mistakes].join(" ");
-  for (const re of [/bench/i, /hug/i, /hip/i, /control/i, /pain|momentum/i]) assert.match(all, re);
+  for (const re of [/bench/i, /both feet/i, /hip/i, /control/i, /pain|momentum/i]) assert.match(all, re);
   await app.page.evaluate(() => { setDay(1); ui.panel = "add"; render(); });
   assert.ok(await app.page.$('[data-act="pick"][data-id="psoas"]'));
   assert.ok(await app.page.$('[data-act="pick"][data-id="psoas-situp"]') === null, "sit-up already on Day B so hidden from pick");
@@ -98,7 +98,7 @@ test("v57 Day B save migrates: psoas → psoas-situp in the same slot; march pro
   const x = s.exercises[3];
   assert.equal(x.name, NAME);
   assert.equal(x.bw, true);
-  assert.equal(x.bilateral, true);
+  assert.equal(x.bilateral, false);
   assert.equal(x.reps, 8);
   assert.equal(x.weight, 0);
   assert.equal(s.exercises[0].setsLog[0].ok, true, "in-progress RDL set kept");
@@ -108,7 +108,7 @@ test("v57 Day B save migrates: psoas → psoas-situp in the same slot; march pro
   assert.equal(s.anvilPsoasSitupV58, true);
   assert.deepEqual(s.dayOrder["anvil:1"], ["rdl", "ohp", "lunge", "psoas-situp", "lmr", "heaves", "bext", "neck", "curl"]);
   const card = await app.page.$eval("#ex-psoas-situp", (el) => el.textContent);
-  assert.match(card, /Psoas sit-up/);
+  assert.match(card, /Double-leg psoas sit-up/);
   assert.equal(await app.page.$("#ex-psoas"), null);
   await reload(app);
   assert.deepEqual((await ls(app.page, KEYS.STATE)).exercises.map((e) => e.id), ["rdl", "ohp", "lunge", "psoas-situp", "lmr", "heaves", "bext", "neck", "curl"]);

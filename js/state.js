@@ -174,6 +174,16 @@ function load(){
         dayOrder = {...dayOrder, [k]: ids.map(id => id === "psoas" ? "psoas-situp" : id)};
       }
     }
+    // ANVIL v60: Psoas sit-up becomes the double-leg version (same id, so progress, history and dayOrder stay linked).
+    // One-shot: saved copies (Day B or an Add-on) get the new name/note and lose "each side" (no switch-sides, no half-ticks).
+    let psoasDoubleChanged = false;
+    if (program.id === "anvil" && raw.anvilPsoasDoubleV60 !== true) {
+      psoasDoubleChanged = true;
+      baseExs = baseExs.map(ex => ex.id !== "psoas-situp" ? ex : {
+        ...ex, name: PSOAS_DOUBLE_NAME, note: PSOAS_DOUBLE_NOTE, bilateral: false,
+        setsLog: Array.isArray(ex.setsLog) ? ex.setsLog.map(({half, ...st}) => st) : ex.setsLog,
+      });
+    }
     // EMBER v59: Cossack (ladder) joins Day A right after the row; Bulgarian split squat joins Day B right after
     // the Plate RDL (one-shot). Nothing is removed; logs, progress and custom order stay, the two new lifts start fresh.
     let emberSplitChanged = false;
@@ -235,7 +245,7 @@ function load(){
       mobile: false,
       altExercises: hydrateMobility(raw.mobility?.exercises, exerciseEdits, mobilityLevels),
     };
-    if (normalizeWaveTargets() || needsCueMigration || layoutChanged || xrdlChanged || neckChanged || psoasSitupChanged || emberSplitChanged) save();
+    if (normalizeWaveTargets() || needsCueMigration || layoutChanged || xrdlChanged || neckChanged || psoasSitupChanged || emberSplitChanged || psoasDoubleChanged) save();
     // Re-open Mobility if the app was closed mid-mobility (ANVIL only)
     if (raw.mobility?.active === true && program.id === "anvil") swapMobility(true);
   } catch (e) {
@@ -261,7 +271,7 @@ function saveState(){
     bodyWeightLog: state.bodyWeightLog || [],
     soundVolume: clampVolume(state.soundVolume), cuePack: normalizeCuePack(state.cuePack),
     mobility: mobilityBlob(),
-    loudCuesV33: true, anvilLayoutV38: true, anvilXrdlV49: true, neckIsoV50: true, anvilPsoasSitupV58: true, emberSplitV59: true,
+    loudCuesV33: true, anvilLayoutV38: true, anvilXrdlV49: true, neckIsoV50: true, anvilPsoasSitupV58: true, emberSplitV59: true, anvilPsoasDoubleV60: true,
     exerciseEdits: sanitizeEdits(state.exerciseEdits),
     mobilityLevels: sanitizeMobLevels(state.mobilityLevels),
     dayOrder: sanitizeDayOrder(state.dayOrder),
