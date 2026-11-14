@@ -94,7 +94,7 @@ test("v57 Day B save migrates: psoas → psoas-situp in the same slot; march pro
   const raw = v57DayB();
   const app = await openApp(srv.url, { storage: { [KEYS.STATE]: raw } });
   const s = await ls(app.page, KEYS.STATE);
-  assert.deepEqual(s.exercises.map((e) => e.id), ["rdl", "ohp", "lunge", "psoas-situp", "lmr", "heaves", "bext", "neck", "curl"]);
+  assert.deepEqual(s.exercises.map((e) => e.id), ["rdl", "ohp", "lunge", "psoas-situp", "lmr", "heaves", "bext", "ws-copenhagen", "neck", "curl"]);
   const x = s.exercises[3];
   assert.equal(x.name, NAME);
   assert.equal(x.bw, true);
@@ -111,7 +111,7 @@ test("v57 Day B save migrates: psoas → psoas-situp in the same slot; march pro
   assert.match(card, /Double-leg psoas sit-up/);
   assert.equal(await app.page.$("#ex-psoas"), null);
   await reload(app);
-  assert.deepEqual((await ls(app.page, KEYS.STATE)).exercises.map((e) => e.id), ["rdl", "ohp", "lunge", "psoas-situp", "lmr", "heaves", "bext", "neck", "curl"]);
+  assert.deepEqual((await ls(app.page, KEYS.STATE)).exercises.map((e) => e.id), ["rdl", "ohp", "lunge", "psoas-situp", "lmr", "heaves", "bext", "ws-copenhagen", "neck", "curl"]);
   assert.deepEqual(app.errors, []);
   await app.close();
 });

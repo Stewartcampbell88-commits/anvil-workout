@@ -103,6 +103,7 @@ document.getElementById("app").addEventListener("click", (e) => {
     if (lab) lab.textContent = `${Math.round(state.soundVolume * 100)}%`;
   }
   else if (act==="dismiss-hold") dismissBalanceHold();
+  else if (act==="ws-keep") { const r = keepWeeklySpecial(); if (r) toast(`${r.kept} kept on Day B`, "Now a normal lift — the next weekly special takes the slot"); render(); }
   else if (act==="rom-yes") answerRom(true);
   else if (act==="rom-no") answerRom(false);
   else if (act==="rom-cancel") cancelRom();

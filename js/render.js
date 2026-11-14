@@ -49,11 +49,15 @@ function render(){
     const failed = exerciseFailed(ex);
     const statusCls = ex.skipped ? "skipped" : passed ? "pass" : failed ? "fail" : "";
     const tag = showTag?`<p class="block">${esc(ex.block)}</p>`:"";
+    const ws = isWeeklySpecial(ex) ? wsCurrent(state.programId) : null;
+    const wsNx = ws ? wsNext(state.programId) : null;
+    const wsBadge = ws ? `<p class="ws-badge" data-ws-badge><span class="ws-pill">★ Weekly special</span> <span class="ws-sess">(session ${wsState(state.programId).count + 1} of ${WS_SESSIONS})</span></p>` : "";
+    const wsFoot = ws ? `<div class="ws-foot"><span class="ws-next" data-ws-next>${wsNx ? `Next up: ${esc(wsNx.w.def.name)}` : "Last one in the rotation"}</span><button type="button" class="ws-keep" data-act="ws-keep" aria-label="Keep ${esc(ex.name)} on Day B">＋ Keep it</button></div>` : "";
 
     if (!expanded) {
       if (ex.skipped) {
         return `${tag}
-      <article class="card collapsed skipped" id="ex-${esc(ex.id)}">
+      <article class="card collapsed skipped${ws?" ws-card":""}" id="ex-${esc(ex.id)}">${wsBadge}
         <div class="row" style="align-items:center">
           <h2 class="muted" style="margin:0">${exNameHtml(ex, ei)}</h2>
           <button class="skip on" data-act="skip" data-i="${ei}">Unskip</button>
@@ -63,7 +67,7 @@ function render(){
       }
       const statusLab = passed ? "passed" : failed ? "failed" : "done";
       return `${tag}
-      <article class="card collapsed ${statusCls}" id="ex-${esc(ex.id)}">
+      <article class="card collapsed ${statusCls}${ws?" ws-card":""}" id="ex-${esc(ex.id)}">${wsBadge}
         <button type="button" class="ex-toggle" data-act="toggle-ex" data-i="${ei}" aria-expanded="false" aria-label="${esc(ex.name)}, ${statusLab}. Expand">
           <h2>${exNameHtml(ex, ei)}</h2>
           <span class="ex-status ${statusCls}" aria-hidden="true"></span>
@@ -129,10 +133,11 @@ function render(){
             ${ex.skipped?`<p class="note">${skipReasonText(ex.skipReason, ex.skipNote) ? `Skipped: ${esc(skipReasonText(ex.skipReason, ex.skipNote))} — won’t count` : "Skipped — won’t count"}</p>`:""}
           </div>`;
     return `${tag}
-      <article class="card${isActive?" active":""}${ex.skipped?" skipped":""}${resolved && !ex.skipped ? " " + statusCls : ""}" id="ex-${esc(ex.id)}">
+      <article class="card${isActive?" active":""}${ex.skipped?" skipped":""}${resolved && !ex.skipped ? " " + statusCls : ""}${ws?" ws-card":""}" id="ex-${esc(ex.id)}">
+        ${wsBadge}
         <div class="row">
           ${titleBlock}
-          <p class="meta">${esc(targetLabel(ex))}<br>${ex.mobility ? (ex.timed ? "Timed hold" : `Slow reps · ${workSecFor(ex)}s${runSides(ex) === 2 ? " per side" : ""}`) : isNeckIso(ex) ? (ex.reps >= neckMaxFor(ex) ? `Max ${neckMaxFor(ex)}s · ${ex.failStreak}/3 no-rep` : `+${neckStepFor(ex)}s next clean · max ${neckMaxFor(ex)}s`) : `${ex.streak}/3 clean · ${ex.failStreak}/3 no-rep`}${amrap?`<br><span style="opacity:.7;font-size:.65rem">Last set AMRAP · +2 → +${fmtStep(kgStepFor(ex))} kg</span>`:""}</p>
+          <p class="meta">${esc(targetLabel(ex))}<br>${ex.mobility ? (ex.timed ? "Timed hold" : `Slow reps · ${workSecFor(ex)}s${runSides(ex) === 2 ? " per side" : ""}`) : ws ? "Trial · logged, no progression" : isNeckIso(ex) ? (ex.reps >= neckMaxFor(ex) ? `Max ${neckMaxFor(ex)}s · ${ex.failStreak}/3 no-rep` : `+${neckStepFor(ex)}s next clean · max ${neckMaxFor(ex)}s`) : `${ex.streak}/3 clean · ${ex.failStreak}/3 no-rep`}${amrap?`<br><span style="opacity:.7;font-size:.65rem">Last set AMRAP · +2 → +${fmtStep(kgStepFor(ex))} kg</span>`:""}</p>
         </div>
         ${mobImg}
         <div class="weight">${load}</div>
@@ -140,6 +145,7 @@ function render(){
           <div class="split" style="justify-content:center;margin-top:.625rem"><button class="icon-btn" data-act="rest" data-d="-15" aria-label="Minus 15 seconds">−</button>
           <button class="icon-btn" data-act="rest" data-d="15" aria-label="Plus 15 seconds">+</button></div></div>`:""}
         ${sets}
+        ${wsFoot}
         <div style="margin-top:.25rem;display:flex;justify-content:space-between;align-items:center">
           <button class="ex-edit" data-act="edit-ex" data-i="${ei}" aria-label="Edit ${esc(ex.name)}">${I.pencil}<span>Edit</span></button>
           <span style="display:flex;gap:.25rem;align-items:center">${ex.mobility || state.mobile ? "" : `<button class="icon-btn move-btn" data-act="move-ex" data-i="${ei}" data-d="-1" aria-label="Move ${esc(ex.name)} up"${ei===0?" disabled":""}>↑</button><button class="icon-btn move-btn" data-act="move-ex" data-i="${ei}" data-d="1" aria-label="Move ${esc(ex.name)} down"${ei===state.exercises.length-1?" disabled":""}>↓</button>`}<button class="skip${ex.skipped?" on":""}" data-act="skip" data-i="${ei}">${ex.skipped?"Unskip":"Skip"}</button></span>

@@ -150,7 +150,8 @@ function setProgram(id, dayIndex=0){
   const program = getProgram(id);
   const day = Math.min(Math.max(0, dayIndex), program.days.length-1);
   const progress = captureProgress(state.exercises, state.liftProgress);
-  state = {...state, programId: program.id, dayIndex: day, liftProgress: progress, exercises: applyDayOrder(applyProgress(seedProgram(program.id, day), progress, program.id), program.id, day)};
+  state = {...state, programId: program.id, dayIndex: day, liftProgress: progress};
+  state.exercises = dayList(program.id, day, progress);
   clearExpandedEx();
   clockClear();
   save(); render();
@@ -162,7 +163,7 @@ function setDay(dayIndex){
   const progress = captureProgress(state.exercises, state.liftProgress);
   state.dayIndex = day;
   state.liftProgress = progress;
-  state.exercises = applyDayOrder(applyProgress(seedProgram(state.programId, day), progress, state.programId), state.programId, day);
+  state.exercises = dayList(state.programId, day, progress);
   clearExpandedEx();
   clockClear();
   save(); render();
@@ -188,10 +189,103 @@ function moveExercise(i, d){
   rememberDayOrder();
   save(); return true;
 }
+/** Programmed day + kept weekly specials, progress applied, saved order, then this week's special (v61). */
+function dayList(pid, day, progress){
+  const base = withKeptSpecials(seedProgram(pid, day), pid, day);
+  return withWeeklySpecial(applyDayOrder(applyProgress(base, progress || {}, pid), pid, day), pid, day);
+}
+// ---- v61 Weekly special (ANVIL Day B trial slot) ----
+function sanitizeWeeklySpecial(o){
+  const out = {};
+  if (!o || typeof o !== "object" || Array.isArray(o)) return out;
+  for (const pid of Object.keys(WS_PROGRAMS)) {
+    const v = o[pid];
+    if (!v || typeof v !== "object") continue;
+    const idx = Number.isInteger(v.idx) ? ((v.idx % WEEKLY_SPECIALS.length) + WEEKLY_SPECIALS.length) % WEEKLY_SPECIALS.length : 0;
+    const count = Number.isInteger(v.count) ? Math.min(WS_SESSIONS - 1, Math.max(0, v.count)) : 0;
+    const kept = Array.isArray(v.kept) ? [...new Set(v.kept.filter(k => WEEKLY_SPECIALS.some(w => w.key === k)))] : [];
+    out[pid] = { idx, count, kept };
+  }
+  return out;
+}
+function wsState(pid){
+  return sanitizeWeeklySpecial(state?.weeklySpecial)[pid] || { idx: 0, count: 0, kept: [] };
+}
+/** The rotation entry at or after idx that hasn't been kept (null when all five are kept). */
+function wsPick(pid, from){
+  const st = wsState(pid), n = WEEKLY_SPECIALS.length;
+  for (let k = 0; k < n; k++) {
+    const i = (from + k) % n;
+    if (!st.kept.includes(WEEKLY_SPECIALS[i].key)) return { i, w: WEEKLY_SPECIALS[i] };
+  }
+  return null;
+}
+function wsCurrent(pid){ return wsPick(pid, wsState(pid).idx); }
+function wsNext(pid){
+  const cur = wsCurrent(pid);
+  if (!cur) return null;
+  const nx = wsPick(pid, cur.i + 1);
+  return nx && nx.i !== cur.i ? nx : null;
+}
+function wsExercise(w){
+  return toExercise({...w.def, id: "ws-" + w.key, block: "Weekly special", weeklySpecial: true});
+}
+function wsHasSlot(pid, day){ return Object.prototype.hasOwnProperty.call(WS_PROGRAMS, pid) && WS_PROGRAMS[pid] === day; }
+function withKeptSpecials(list, pid, day){
+  if (!wsHasSlot(pid, day)) return list;
+  let out = list;
+  for (const key of wsState(pid).kept) {
+    if (out.some(e => e.id === key)) continue;
+    const w = WEEKLY_SPECIALS.find(x => x.key === key);
+    const n = out.findIndex(e => NECK_IDS.has(e.id));
+    const at = n >= 0 ? n : out.length;
+    out = [...out.slice(0, at), toExercise({...w.def}), ...out.slice(at)];
+  }
+  return out;
+}
+/** Put this week's special in the slot (before the neck finisher, else at the end). Same move → keeps its logged sets. */
+function withWeeklySpecial(list, pid, day){
+  const saved = list.find(e => isWeeklySpecial(e));
+  let out = list.filter(e => !isWeeklySpecial(e));
+  if (!wsHasSlot(pid, day)) return out;
+  const cur = wsCurrent(pid);
+  if (!cur) return out;
+  let ex = wsExercise(cur.w);
+  if (saved && saved.id === ex.id) ex = {...ex, weight: saved.weight ?? ex.weight, reps: saved.reps ?? ex.reps, setsLog: saved.setsLog || ex.setsLog, skipped: !!saved.skipped, ...(saved.skipReason ? { skipReason: saved.skipReason } : {}), ...(saved.skipNote ? { skipNote: saved.skipNote } : {})};
+  const n = out.findIndex(e => NECK_IDS.has(e.id));
+  const at = n >= 0 ? n : out.length;
+  return [...out.slice(0, at), ex, ...out.slice(at)];
+}
+/** After a logged Day B session: count it; after WS_SESSIONS the next move takes over (loops). */
+function advanceWeeklySpecial(pid){
+  const cur = wsCurrent(pid);
+  if (!cur) return;
+  const st = wsState(pid);
+  let { count } = st, idx = cur.i;
+  count += 1;
+  if (count >= WS_SESSIONS) { count = 0; const nx = wsPick(pid, cur.i + 1); idx = nx ? nx.i : cur.i; }
+  state.weeklySpecial = {...sanitizeWeeklySpecial(state.weeklySpecial), [pid]: { ...st, idx, count }};
+}
+/** "Keep it": the trial move becomes a normal Day B lift (via addExercise, in the special's slot); rotation skips it from now on. */
+function keepWeeklySpecial(){
+  const pid = state.programId;
+  if (state.mobile || !wsHasSlot(pid, state.dayIndex)) return false;
+  const cur = wsCurrent(pid);
+  if (!cur) return false;
+  const si = state.exercises.findIndex(e => isWeeklySpecial(e));
+  const st = wsState(pid);
+  state.weeklySpecial = {...sanitizeWeeklySpecial(state.weeklySpecial), [pid]: { ...st, kept: [...st.kept, cur.w.key], count: 0 }};
+  const added = state.exercises.some(e => e.id === cur.w.key) || addExercise({...cur.w.def}, si >= 0 ? si : undefined);
+  // Next move in the rotation takes the special slot right away
+  state.exercises = withWeeklySpecial(state.exercises, pid, state.dayIndex);
+  rememberDayOrder();
+  save();
+  return { kept: cur.w.def.name, added: !!added };
+}
 function dayOrderKey(){ return `${state.programId}:${state.dayIndex}`; }
 function rememberDayOrder(){
   if (state.mobile) return;
-  state.dayOrder = {...sanitizeDayOrder(state.dayOrder), [dayOrderKey()]: state.exercises.map(e => e.id)};
+  state.dayOrder = {...sanitizeDayOrder(state.dayOrder), [dayOrderKey()]: state.exercises.filter(e => !isWeeklySpecial(e)).map(e => e.id)};
 }
 /** Sort a freshly seeded day by the saved order; unknown lifts keep seed order at the end. */
 function applyDayOrder(list, programId, dayIndex){
@@ -272,6 +366,13 @@ function logSession(opts = {}){
     const amrapHit = usesAmrap(ex) && clean && lastReps >= ex.reps + AMRAP_BONUS;
     const liftEntry = { id: ex.id, name: ex.name, weight: workedWeight, reps: workedReps, clean, sets: setsLog.map(s => ({ok:!!s.ok, miss:!!s.miss, reps:s.reps ?? null})) };
     if (usesAmrap(ex)) liftEntry.amrapReps = lastReps;
+    if (isWeeklySpecial(ex)) {
+      // v61 Weekly special: logged to history only — no wave, no kg, no streaks, no ROM / balance popups.
+      liftEntry.special = true;
+      lifts.push(liftEntry);
+      if (!dry) notes.push(`${ex.name}: weekly special logged${all ? "" : " (incomplete)"}`);
+      return {...ex, setsLog: blankSets(ex.sets)};
+    }
     lifts.push(liftEntry);
     if (!all) { notes.push(`${ex.name}: incomplete`); return {...ex, setsLog: blankSets(ex.sets)}; }
     if (!clean && isNeckIso(ex)) {
@@ -503,6 +604,10 @@ function logSession(opts = {}){
   });
   if (dry) return romAsks;
   state.exercises = exercises;
+  if (wsHasSlot(programId, state.dayIndex)) {
+    advanceWeeklySpecial(programId);
+    state.exercises = withWeeklySpecial(state.exercises, programId, state.dayIndex);
+  }
   state.liftProgress = captureProgress(exercises, state.liftProgress);
   const dayLabel = getProgram(programId)?.days?.[state.dayIndex]?.label || "";
   const timing = workoutTiming();

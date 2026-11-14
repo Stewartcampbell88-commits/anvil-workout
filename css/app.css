@@ -281,3 +281,12 @@ main.has-tabs { padding-bottom: max(5.5rem, calc(env(safe-area-inset-bottom) + 4
 .move-btn:disabled { opacity:.3; }
 .chips.place { flex-wrap:wrap; }
 .chips.place .chip { width:auto; padding:0 .625rem; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* v61 Weekly special */
+.ws-card { box-shadow: 0 0 0 1.5px var(--primary) inset; }
+.ws-badge { margin:0 0 .5rem; font-size:.8rem; display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; }
+.ws-pill { background:var(--primary); color:#fff; font-weight:800; letter-spacing:.06em; text-transform:uppercase; font-size:.7rem; padding:.2rem .55rem; border-radius:999px; }
+.ws-sess { color:var(--muted); font-weight:600; }
+.ws-foot { display:flex; justify-content:space-between; align-items:center; gap:.5rem; margin-top:.5rem; flex-wrap:wrap; }
+.ws-next { color:var(--muted); font-size:.85rem; }
+.ws-keep { min-height:2.5rem; padding:0 .9rem; border-radius:.75rem; background:var(--border); color:var(--fg); font-weight:700; border:1px solid var(--primary); }

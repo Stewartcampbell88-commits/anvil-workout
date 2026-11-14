@@ -7,7 +7,7 @@ const ANVIL_PREVIEW = /\/(anvil-)?preview\//.test(location.pathname);
 const PREVIEW_PREFIX = "anvil-preview:";
 function K(key){ return ANVIL_PREVIEW ? PREVIEW_PREFIX + key : key; }
 const STORAGE = K("anvil_app_v3");
-const APP_VERSION = "anvil-v60";
+const APP_VERSION = "anvil-v61";
 const CUE_LOUDNESS = 2.4;
 const CUE_MAX_GAIN = 0.95;
 const SET_OPTS = [1,2,3,4,5];
@@ -106,6 +106,7 @@ function fmtKg(w){
 function usesAmrap(ex){
   if (!ex || (ex.sets ?? 0) < 2) return false;
   if (ex.mobility) return false;
+  if (isWeeklySpecial(ex)) return false;
   if (isPlankSeconds(ex)) return false;
   if (ex.finisher) return false;
   if (isHeaveLadder(ex) && (ex.levelIndex ?? 0) < HEAVE_STAGES.length - 1) return false;
@@ -225,7 +226,7 @@ function normalizeWaveTargets(){
   const progress = {...(state.liftProgress || {})};
   state.exercises = (state.exercises || []).map(ex => {
     const rungs = waveRepsFor(ex);
-    if (isPlankSeconds(ex) || ex.reps == null || rungs.includes(ex.reps)) return ex;
+    if (isWeeklySpecial(ex) || isPlankSeconds(ex) || ex.reps == null || rungs.includes(ex.reps)) return ex;
     const reps = snapWaveRep(ex.reps, rungs);
     changed = true;
     const p = progress[ex.id];
@@ -234,7 +235,7 @@ function normalizeWaveTargets(){
   });
   for (const [id, p] of Object.entries(progress)) {
     if (!p || typeof p !== "object" || p.reps == null) continue;
-    if (id === "em-plank" || id === "em-heaves" || id === "tp-plank" || id === "tp-heaves" || NECK_IDS.has(id) || /seconds/i.test(p.note||"")) continue;
+    if (id === "em-plank" || id === "em-heaves" || id === "tp-plank" || id === "tp-heaves" || NECK_IDS.has(id) || isWeeklySpecial(id) || /seconds/i.test(p.note||"")) continue;
     const rungs = waveRepsFor(editFor(pid, id));
     if (rungs.includes(p.reps)) continue;
     progress[id] = {...p, reps: snapWaveRep(p.reps, rungs)};
@@ -398,6 +399,20 @@ const LIBRARY = [
     bb("farmer","Farmer carry",3,40,60,"Add-on",{cap:60,note:"Metres per set"}),
   ]},
 ];
+
+/** v61 ANVIL Day B "Weekly special": one trial move at a time, 2 Day B sessions each, then the next (loops).
+ *  Session ids are "ws-<key>" (logged to history, never progressed); "Keep it" adds <key> as a normal Day B lift. */
+const WS_PROGRAMS = { anvil: 1 }; // programId → day index that carries the slot
+const WS_SESSIONS = 2;
+const WEEKLY_SPECIALS = [
+  { key:"copenhagen", def: bw("copenhagen","Copenhagen hold (short lever)",3,15,45,"Day B",{bilateral:true,cap:45,note:"Side plank with your top knee on a bench, bottom leg tucked under. Hips high, body straight. Seconds each side. Progress: mid lever (shin on the bench) → long lever (foot on the bench)."}) },
+  { key:"sl-bridge",  def: bw("sl-bridge","Single-leg glute bridge",3,10,45,"Day B",{bilateral:true,cap:16,note:"On your back, one foot planted near your hip, other leg up. Drive through the heel, squeeze the glute at the top, lower slowly. Each side. Bodyweight."}) },
+  { key:"tib-raise",  def: bw("tib-raise","Tibialis raise",3,15,45,"Day B",{cap:25,note:"Back flat against a wall, heels about a foot out. Lift your toes as high as you can, pause, lower slowly. Legs straight."}) },
+  { key:"suitcase",   def: bb("suitcase","Suitcase hold (bar)",3,20,60,"Day B",{weight:20,bilateral:true,cap:45,note:"Hold a bar by the middle in one hand at your side. Stand tall, shoulders level — don’t lean. Seconds each side."}) },
+  { key:"birddog-row",def: bb("birddog-row","Bird dog row",3,8,60,"Day B",{weight:5,bilateral:true,cap:12,note:"One hand and the same-side knee on a bench, opposite leg straight out behind. Row a plate or dumbbell to your hip with the free hand, hips square. Each side."}) },
+];
+function isWeeklySpecial(ex){ return /^ws-/.test(String((ex && typeof ex === "object") ? ex.id : ex || "")); }
+function wsSpecialById(id){ const k = String(id||"").replace(/^ws-/, ""); return WEEKLY_SPECIALS.find(w => w.key === k) || null; }
 
 /** v53 ANVIL Mobility: its own session (not a Day A/B lift day). ~15 min full body, extra hips + lower back.
  *  Ids are "mob-*" so they never meet liftProgress, the kg wave or the balance chain. 1 set each, no kg. */
@@ -578,7 +593,7 @@ function applyProgress(exs, progress, programId, edits){
     }
     next = applyEdits(next, pid, allEdits);
     const rungs = waveRepsFor(next);
-    if ((waveProg || String(next.id||"").startsWith("em-") || String(next.id||"").startsWith("tp-")) && !isPlankSeconds(next) && next.reps != null && !rungs.includes(next.reps)) {
+    if ((waveProg || String(next.id||"").startsWith("em-") || String(next.id||"").startsWith("tp-")) && !isWeeklySpecial(next) && !isPlankSeconds(next) && next.reps != null && !rungs.includes(next.reps)) {
       next = {...next, reps: snapWaveRep(next.reps, rungs)};
     }
     if (isNeckIso(next) && next.reps > neckMaxFor(next)) next = {...next, reps: neckMaxFor(next)};

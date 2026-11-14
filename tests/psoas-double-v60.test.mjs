@@ -75,7 +75,7 @@ test("v59 save migrates: same lift becomes double-leg; progress, history, order 
   const raw = v59DayB();
   const app = await openApp(srv.url, { storage: { [KEYS.STATE]: raw } });
   let s = await ls(app.page, KEYS.STATE);
-  const ids = ["rdl", "psoas-situp", "ohp", "lunge", "lmr", "heaves", "bext", "neck"];
+  const ids = ["rdl", "psoas-situp", "ohp", "lunge", "lmr", "heaves", "bext", "ws-copenhagen", "neck"]; // v61 weekly special slot before neck
   assert.deepEqual(s.exercises.map((e) => e.id), ids);
   const x = s.exercises[1];
   assert.equal(x.name, DOUBLE); assert.equal(x.note, DOUBLE_NOTE); assert.equal(x.bilateral, false);

@@ -80,7 +80,7 @@ function load(){
       const snapped = {};
       for (const [id, p] of Object.entries(liftProgress)) {
         if (!p || typeof p !== "object") { snapped[id] = p; continue; }
-        const skipSnap = id === "em-plank" || id === "em-heaves" || id === "tp-plank" || id === "tp-heaves" || NECK_IDS.has(id);
+        const skipSnap = id === "em-plank" || id === "em-heaves" || id === "tp-plank" || id === "tp-heaves" || NECK_IDS.has(id) || isWeeklySpecial(id);
         const rungs = waveRepsFor(editFor(program.id, id, exerciseEdits));
         const reps = (!skipSnap && p.reps != null && !rungs.includes(p.reps)) ? snapWaveRep(p.reps, rungs) : p.reps;
         snapped[id] = reps === p.reps ? p : {...p, reps};
@@ -225,6 +225,14 @@ function load(){
       baseExs = [...ordered, ...extras];
       layoutChanged = true;
     }
+    // v61 Weekly special (ANVIL Day B): rotation state starts at move 1, session 1 (one-shot); the slot itself is
+    // (re)built from that state on every load, so it is idempotent and never touches progress or the saved order.
+    let weeklySpecial = sanitizeWeeklySpecial(raw.weeklySpecial);
+    let wsChanged = false;
+    if (raw.anvilWeeklySpecialV61 !== true) {
+      wsChanged = true;
+      for (const pid of Object.keys(WS_PROGRAMS)) if (!weeklySpecial[pid]) weeklySpecial = {...weeklySpecial, [pid]: { idx: 0, count: 0, kept: [] }};
+    }
     if (liftProgress.bext && Number(liftProgress.bext.weight) > 0) liftProgress = {...liftProgress, bext:{...liftProgress.bext, weight:0}};
     const legacyCueDefault = raw.soundVolume === 0.7;
     const needsCueMigration = raw.loudCuesV33 !== true;
@@ -242,10 +250,17 @@ function load(){
       exerciseEdits,
       mobilityLevels,
       dayOrder,
+      weeklySpecial,
       mobile: false,
       altExercises: hydrateMobility(raw.mobility?.exercises, exerciseEdits, mobilityLevels),
     };
-    if (normalizeWaveTargets() || needsCueMigration || layoutChanged || xrdlChanged || neckChanged || psoasSitupChanged || emberSplitChanged || psoasDoubleChanged) save();
+    // Kept specials + this week's special go into the saved Day B list (needs state.weeklySpecial set above).
+    if (wsHasSlot(program.id, dayIndex)) {
+      const before = JSON.stringify(state.exercises.map(e => e.id));
+      state.exercises = withWeeklySpecial(applyProgress(withKeptSpecials(state.exercises, program.id, dayIndex), liftProgress, program.id, exerciseEdits), program.id, dayIndex);
+      if (JSON.stringify(state.exercises.map(e => e.id)) !== before) wsChanged = true;
+    }
+    if (wsChanged ||normalizeWaveTargets() || needsCueMigration || layoutChanged || xrdlChanged || neckChanged || psoasSitupChanged || emberSplitChanged || psoasDoubleChanged) save();
     // Re-open Mobility if the app was closed mid-mobility (ANVIL only)
     if (raw.mobility?.active === true && program.id === "anvil") swapMobility(true);
   } catch (e) {
@@ -271,7 +286,8 @@ function saveState(){
     bodyWeightLog: state.bodyWeightLog || [],
     soundVolume: clampVolume(state.soundVolume), cuePack: normalizeCuePack(state.cuePack),
     mobility: mobilityBlob(),
-    loudCuesV33: true, anvilLayoutV38: true, anvilXrdlV49: true, neckIsoV50: true, anvilPsoasSitupV58: true, emberSplitV59: true, anvilPsoasDoubleV60: true,
+    loudCuesV33: true, anvilLayoutV38: true, anvilXrdlV49: true, neckIsoV50: true, anvilPsoasSitupV58: true, emberSplitV59: true, anvilPsoasDoubleV60: true, anvilWeeklySpecialV61: true,
+    weeklySpecial: sanitizeWeeklySpecial(state.weeklySpecial),
     exerciseEdits: sanitizeEdits(state.exerciseEdits),
     mobilityLevels: sanitizeMobLevels(state.mobilityLevels),
     dayOrder: sanitizeDayOrder(state.dayOrder),
@@ -302,6 +318,7 @@ function backupPayload(){
     exerciseEdits: sanitizeEdits(state.exerciseEdits),
     mobilityLevels: sanitizeMobLevels(state.mobilityLevels),
     dayOrder: sanitizeDayOrder(state.dayOrder),
+    weeklySpecial: sanitizeWeeklySpecial(state.weeklySpecial), // v61
   };
 }
 
@@ -456,6 +473,7 @@ function applyBackup(raw){
         exerciseEdits: sanitizeEdits(raw.exerciseEdits), // older backups have none → {}
         mobilityLevels: sanitizeMobLevels(raw.mobilityLevels), // v55; older backups have none → all Medium
         dayOrder: sanitizeDayOrder(raw.dayOrder), // v57
+        ...(raw.weeklySpecial && typeof raw.weeklySpecial === "object" ? { weeklySpecial: sanitizeWeeklySpecial(raw.weeklySpecial), anvilWeeklySpecialV61: true } : {}), // v61
         ...(raw.mobility && typeof raw.mobility === "object" && Array.isArray(raw.mobility.exercises) ? { mobility: { active: raw.mobility.active === true, exercises: raw.mobility.exercises } } : {}),
       }));
       if (Array.isArray(raw.walks)) {
