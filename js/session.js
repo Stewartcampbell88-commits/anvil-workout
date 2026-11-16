@@ -312,6 +312,7 @@ function logSession(opts = {}){
   const notes = [];
   const lifts = [];
   const balanceHolds = [];
+  const chainAheads = [];
   const sessionExs = state.exercises;
   const progressSnap = state.liftProgress || {};
   const programId = state.programId;
@@ -330,10 +331,13 @@ function logSession(opts = {}){
     const hold = balanceKgHold(programId, ex, nextWeight, sessionExs, progressSnap);
     if (!hold && romHold(ex, nextWeight)) return { weight: ex.weight, reps: ex.reps, streak: 3, held: true, rom: true };
     if (hold) {
-      notes.push(`${ex.name}: held for balance — stays ${hold.weight} kg until ${hold.ceilingName} moves up (now ${hold.ceilingWeight} kg)`);
+      notes.push(`${ex.name}: held for balance — stays ${fmtKg(hold.weight)} kg, ${fmtKg(CHAIN_ALLOWANCE_KG)} kg over ${hold.ceilingName} (${fmtKg(hold.ceilingWeight)} kg) is the limit. ${hold.ceilingName} is holding this back`);
       balanceHolds.push(hold);
       return { weight: ex.weight, reps: ex.reps, streak: 3, held: true };
     }
+    // v62: allowed over the cap (within CHAIN_ALLOWANCE_KG) — remind in the post-log popup.
+    const ahead = chainAhead(programId, ex, sessionExs, progressSnap, nextWeight);
+    if (ahead && !dry) { chainAheads.push(ahead); notes.push(`${ex.name}: ${chainAheadText(ahead)}`); }
     notes.push(successNote);
     return { weight: nextWeight, reps: nextReps, streak: streakAfterOk, held: false };
   }
@@ -614,6 +618,7 @@ function logSession(opts = {}){
   state.history = [{date:new Date().toISOString(), programId, day: dayLabel, notes, lifts, ...(skips.length ? { skips } : {}), ...(timing || {})}, ...state.history].slice(0,HISTORY_MAX);
   clockClear();
   ui.pendingHolds = balanceHolds.length ? balanceHolds : null;
+  ui.pendingAhead = chainAheads.length ? chainAheads : null;
   save();
   newLocalActivity();
   syncSoon();
@@ -816,7 +821,7 @@ function finishLog(rom){
   else toast("Session logged", notes.slice(0,3).join(" · "));
   clearExpandedEx();
   stopRest();
-  if (ui.pendingHolds?.length) {
+  if (ui.pendingHolds?.length || ui.pendingAhead?.length) {
     ui.panel = "balance-hold";
   } else {
     const lastKg = state.bodyWeightLog[0]?.kg;
@@ -828,6 +833,7 @@ function finishLog(rom){
 }
 function dismissBalanceHold(){
   ui.pendingHolds = null;
+  ui.pendingAhead = null;
   const lastKg = state.bodyWeightLog[0]?.kg;
   ui.bwDraftKg = (typeof lastKg === "number" && lastKg > 0) ? lastKg : null;
   ui.bwLinkSession = true;

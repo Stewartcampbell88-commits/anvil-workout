@@ -7,7 +7,7 @@ const ANVIL_PREVIEW = /\/(anvil-)?preview\//.test(location.pathname);
 const PREVIEW_PREFIX = "anvil-preview:";
 function K(key){ return ANVIL_PREVIEW ? PREVIEW_PREFIX + key : key; }
 const STORAGE = K("anvil_app_v3");
-const APP_VERSION = "anvil-v61";
+const APP_VERSION = "anvil-v62";
 const CUE_LOUDNESS = 2.4;
 const CUE_MAX_GAIN = 0.95;
 const SET_OPTS = [1,2,3,4,5];
@@ -158,7 +158,29 @@ function workingWeightFor(id, sessionExs, progress){
   if (p && typeof p === "object" && Number.isFinite(Number(p.weight))) return Number(p.weight);
   return null;
 }
-/** Gate a would-be kg bump. Equality with ceiling is OK; exceeding is held. Skips heave ladders. */
+/** v62: a lift may run up to this many kg ahead of the lift above it in the chain; cap + this is the hard ceiling. */
+const CHAIN_ALLOWANCE_KG = 40;
+/** The capping lift for ex (same skips as the gate), or null. */
+function chainCeiling(programId, ex, sessionExs, progress){
+  if (!ex || isHeaveLadder(ex) || isWeeklySpecial(ex)) return null;
+  if (isCossackLadder(ex) && ((ex.levelIndex ?? 0) < COSSACK_STAGES.length - 1 || !(Number(ex.weight) > 0))) return null;
+  const ceilId = ceilingFor(programId, ex.id, sessionExs, progress);
+  if (!ceilId) return null;
+  const ceilW = workingWeightFor(ceilId, sessionExs, progress);
+  if (ceilW == null || !Number.isFinite(ceilW)) return null;
+  if (SQUAT_IDS.has(ceilId) && !(ceilW > 0)) return null;
+  return { ceilingId: ceilId, ceilingName: liftLabelFor(ceilId, sessionExs), ceilingWeight: ceilW };
+}
+/** Reminder when a lift sits above its capping lift: { gap, ceilingName, ... } or null. */
+function chainAhead(programId, ex, sessionExs, progress, weight){
+  const c = chainCeiling(programId, ex, sessionExs, progress);
+  if (!c) return null;
+  const w = +Number(weight ?? ex.weight).toFixed(2);
+  if (!(w > c.ceilingWeight)) return null;
+  return { id: ex.id, name: ex.name, weight: w, ...c, gap: +(w - c.ceilingWeight).toFixed(2), limit: +(c.ceilingWeight + CHAIN_ALLOWANCE_KG).toFixed(2) };
+}
+function chainAheadText(a){ return `Ahead of ${a.ceilingName} by ${fmtKg(a.gap)} kg — ${a.ceilingName} is holding this back`; }
+/** Gate a would-be kg bump. Up to cap + CHAIN_ALLOWANCE_KG is OK; beyond that is held. Skips heave ladders. */
 function balanceKgHold(programId, ex, nextWeight, sessionExs, progress){
   if (!ex || isHeaveLadder(ex)) return null;
   // Cossack ladder: skip early stages; only gate final stage when loaded
@@ -171,8 +193,11 @@ function balanceKgHold(programId, ex, nextWeight, sessionExs, progress){
   // row/press chained under it) could never gain kg. A loaded squat still caps bench as before.
   if (SQUAT_IDS.has(ceilId) && !(ceilW > 0)) return null;
   const nw = +Number(nextWeight).toFixed(2);
-  if (!(nw > ceilW)) return null;
+  const limit = +(ceilW + CHAIN_ALLOWANCE_KG).toFixed(2);
+  if (!(nw > limit)) return null;
   return {
+    limit,
+    gap: +((Number(ex.weight) || 0) - ceilW).toFixed(2),
     id: ex.id,
     name: ex.name,
     weight: Number(ex.weight) || 0,

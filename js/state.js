@@ -15,7 +15,7 @@ let state = {
   mobile: false,          // v53: ANVIL Mobility session is on screen (state.exercises = mobility moves)
   altExercises: [],       // the list that's NOT on screen (mobility moves, or the A/B lifts while mobile)
 };
-let ui = { remain:0, running:false, isGo:false, panel:"none", settingsTab:"program", pending:null, pickSets:3, pickReps:8, installHint:false, installed:false, toastTimer:null, swReg:null, updateReady:false, updateChecking:false, refreshing:false, appVersion: APP_VERSION, progressLiftId:null, progressRange:"1m", bwDraftKg:null, bwLinkSession:false, pendingHolds:null, expandedEx:new Set(), mainTab:"workout" };
+let ui = { remain:0, running:false, isGo:false, panel:"none", settingsTab:"program", pending:null, pickSets:3, pickReps:8, installHint:false, installed:false, toastTimer:null, swReg:null, updateReady:false, updateChecking:false, refreshing:false, appVersion: APP_VERSION, progressLiftId:null, progressRange:"1m", bwDraftKg:null, bwLinkSession:false, pendingHolds:null, pendingAhead:null, expandedEx:new Set(), mainTab:"workout" };
 let remainVal = 0, lastCue = -1, tick = null, deferredInstall = null;
 try {
   ui.installed = window.matchMedia("(display-mode: standalone)").matches || Boolean(navigator.standalone) || /ANVIL-APP/.test(navigator.userAgent) || location.hostname === "appassets.androidplatform.net";

@@ -56,9 +56,9 @@ test("AMRAP +1 is not enough", async () => {
   assert.deepEqual(W(o), { reps: 8, weight: 60, streak: 1 });
 });
 
-test("balance chain: bench can't pass squat — held at weight, streak parked at 3", async () => {
-  const o = await sess({ id: "bench", patch: { reps: 12, weight: 60, streak: 2 }, progress: { squat: { reps: 8, weight: 60 } } });
-  assert.deepEqual(W(o), { reps: 12, weight: 60, streak: 3 });
+test("balance chain: bench can't pass squat + 40 kg (v62) — held at weight, streak parked at 3", async () => {
+  const o = await sess({ id: "bench", patch: { reps: 12, weight: 100, streak: 2 }, progress: { squat: { reps: 8, weight: 60 } } });
+  assert.deepEqual(W(o), { reps: 12, weight: 100, streak: 3 });
   assert.equal(o.holds.length, 1);
   assert.equal(o.holds[0].ceilingId, "squat");
 });
@@ -70,10 +70,10 @@ test("balance chain: equal to the ceiling is allowed", async () => {
 });
 
 test("balance chain: row → bench, and EMBER press → row", async () => {
-  let o = await sess({ id: "row", patch: { reps: 12, weight: 40, streak: 2 }, progress: { bench: { reps: 8, weight: 40 } } });
-  assert.equal(o.ex.weight, 40); assert.equal(o.holds[0].ceilingId, "bench");
-  o = await sess({ pid: "ember", day: 1, id: "em-press", patch: { reps: 12, weight: 5, streak: 2 }, progress: { "em-row": { reps: 8, weight: 5 } } });
-  assert.equal(o.ex.weight, 5); assert.equal(o.holds[0].ceilingId, "em-row");
+  let o = await sess({ id: "row", patch: { reps: 12, weight: 80, streak: 2 }, progress: { bench: { reps: 8, weight: 40 } } });
+  assert.equal(o.ex.weight, 80); assert.equal(o.holds[0].ceilingId, "bench");
+  o = await sess({ pid: "ember", day: 1, id: "em-press", patch: { reps: 12, weight: 45, streak: 2 }, progress: { "em-row": { reps: 8, weight: 5 } } });
+  assert.equal(o.ex.weight, 45); assert.equal(o.holds[0].ceilingId, "em-row");
 });
 
 test("balance chain: a 0 kg (bodyweight) squat doesn't cap EMBER bench", async () => {
@@ -93,15 +93,15 @@ test("balance chain: TITAN plate bench progresses past a 0 kg squat and can reac
 test("balance chain: unset / negative squat doesn't cap bench either; a loaded squat still does", async () => {
   let o = await sess({ pid: "ember", id: "em-bench", patch: { reps: 12, weight: 20, streak: 2 }, progress: { "em-squat": { reps: 8, weight: -5 } } });
   assert.equal(o.ex.weight, 22.5);
-  o = await sess({ pid: "ember", id: "em-bench", patch: { reps: 12, weight: 20, streak: 2 }, progress: { "em-squat": { reps: 8, weight: 10 } } });
-  assert.equal(o.ex.weight, 20); assert.equal(o.holds[0].ceilingId, "em-squat");
+  o = await sess({ pid: "ember", id: "em-bench", patch: { reps: 12, weight: 50, streak: 2 }, progress: { "em-squat": { reps: 8, weight: 10 } } });
+  assert.equal(o.ex.weight, 50); assert.equal(o.holds[0].ceilingId, "em-squat");
 });
 
 test("balance chain: rest of the chain unchanged — TITAN row capped by bench, EMBER row by bench", async () => {
-  let o = await sess({ pid: "titan", id: "tp-row", patch: { reps: 12, weight: 2.5, streak: 2 }, progress: { "tp-bench": { reps: 8, weight: 2.5, levelIndex: 0 }, "tp-squat": { reps: 8, weight: 0 } } });
-  assert.equal(o.ex.weight, 2.5); assert.equal(o.holds[0].ceilingId, "tp-bench");
-  o = await sess({ pid: "ember", id: "em-row", patch: { reps: 12, weight: 20, streak: 2 }, progress: { "em-bench": { reps: 8, weight: 20 }, "em-squat": { reps: 8, weight: 0 } } });
-  assert.equal(o.ex.weight, 20); assert.equal(o.holds[0].ceilingId, "em-bench");
+  let o = await sess({ pid: "titan", id: "tp-row", patch: { reps: 12, weight: 42.5, streak: 2 }, progress: { "tp-bench": { reps: 8, weight: 2.5, levelIndex: 0 }, "tp-squat": { reps: 8, weight: 0 } } });
+  assert.equal(o.ex.weight, 42.5); assert.equal(o.holds[0].ceilingId, "tp-bench");
+  o = await sess({ pid: "ember", id: "em-row", patch: { reps: 12, weight: 60, streak: 2 }, progress: { "em-bench": { reps: 8, weight: 20 }, "em-squat": { reps: 8, weight: 0 } } });
+  assert.equal(o.ex.weight, 60); assert.equal(o.holds[0].ceilingId, "em-bench");
 });
 
 test("3 failed sessions → reset week drops 2.5 kg", async () => {

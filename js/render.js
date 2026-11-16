@@ -52,6 +52,8 @@ function render(){
     const ws = isWeeklySpecial(ex) ? wsCurrent(state.programId) : null;
     const wsNx = ws ? wsNext(state.programId) : null;
     const wsBadge = ws ? `<p class="ws-badge" data-ws-badge><span class="ws-pill">★ Weekly special</span> <span class="ws-sess">(session ${wsState(state.programId).count + 1} of ${WS_SESSIONS})</span></p>` : "";
+    const ahead = (!ex.mobility && !state.mobile) ? chainAhead(state.programId, ex, state.exercises, state.liftProgress) : null;
+    const aheadNote = ahead ? `<p class="chain-ahead" data-chain-ahead>⚠ ${esc(chainAheadText(ahead))}</p>` : "";
     const wsFoot = ws ? `<div class="ws-foot"><span class="ws-next" data-ws-next>${wsNx ? `Next up: ${esc(wsNx.w.def.name)}` : "Last one in the rotation"}</span><button type="button" class="ws-keep" data-act="ws-keep" aria-label="Keep ${esc(ex.name)} on Day B">＋ Keep it</button></div>` : "";
 
     if (!expanded) {
@@ -61,7 +63,7 @@ function render(){
         <div class="row" style="align-items:center">
           <h2 class="muted" style="margin:0">${exNameHtml(ex, ei)}</h2>
           <button class="skip on" data-act="skip" data-i="${ei}">Unskip</button>
-        </div>
+        </div>${aheadNote}
         ${skipReasonText(ex.skipReason, ex.skipNote) ? `<p class="note" style="margin:.25rem 0 0">Skipped: ${esc(skipReasonText(ex.skipReason, ex.skipNote))}</p>` : ""}
       </article>`;
       }
@@ -71,7 +73,7 @@ function render(){
         <button type="button" class="ex-toggle" data-act="toggle-ex" data-i="${ei}" aria-expanded="false" aria-label="${esc(ex.name)}, ${statusLab}. Expand">
           <h2>${exNameHtml(ex, ei)}</h2>
           <span class="ex-status ${statusCls}" aria-hidden="true"></span>
-        </button>
+        </button>${aheadNote}
       </article>`;
     }
 
@@ -126,10 +128,12 @@ function render(){
               <span class="ex-status ${statusCls}" aria-hidden="true"></span>
             </button>
             ${ex.note?`<p class="note">${esc(ex.note)}</p>`:""}
+            ${aheadNote}
           </div>`
       : `<div style="min-width:0;flex:1">
             <h2>${exNameHtml(ex, ei)}</h2>
             ${ex.note?`<p class="note">${esc(ex.note)}</p>`:""}
+            ${aheadNote}
             ${ex.skipped?`<p class="note">${skipReasonText(ex.skipReason, ex.skipNote) ? `Skipped: ${esc(skipReasonText(ex.skipReason, ex.skipNote))} — won’t count` : "Skipped — won’t count"}</p>`:""}
           </div>`;
     return `${tag}
@@ -332,14 +336,18 @@ ${restorePinField(".6rem")}
   const bwShown = (typeof ui.bwDraftKg === "number" && ui.bwDraftKg > 0)
     ? ui.bwDraftKg.toFixed(1).replace(/\.0$/, "")
     : "—";
-  const holdLines = (ui.pendingHolds || []).map(h =>
-    `${esc(h.name)} stays at ${h.weight} kg until ${esc(h.ceilingName)} moves up (now ${h.ceilingWeight} kg).`
-  );
-  const balanceHold = ui.panel==="balance-hold" && ui.pendingHolds?.length ? `<div class="settings-sheet" role="dialog" aria-modal="true" aria-label="Held for balance"><div class="settings-sheet-inner">
-    <div class="settings-head"><h2>Held for balance</h2><button class="icon-btn" data-act="dismiss-hold" aria-label="Close">${I.x}</button></div>
+  const holdLines = [
+    ...(ui.pendingHolds || []).map(h =>
+      `<b>${esc(h.name)}</b> stays at ${fmtKg(h.weight)} kg — ahead of ${esc(h.ceilingName)} by ${fmtKg(h.gap ?? (h.weight - h.ceilingWeight))} kg, the ${fmtKg(CHAIN_ALLOWANCE_KG)} kg limit. ${esc(h.ceilingName)} is holding this back (now ${fmtKg(h.ceilingWeight)} kg).`),
+    ...(ui.pendingAhead || []).map(a =>
+      `<b>${esc(a.name)}</b> → ${fmtKg(a.weight)} kg — ahead of ${esc(a.ceilingName)} by ${fmtKg(a.gap)} kg. ${esc(a.ceilingName)} is holding this back (limit ${fmtKg(a.limit)} kg).`),
+  ];
+  const anyHeld = !!ui.pendingHolds?.length;
+  const balanceHold = ui.panel==="balance-hold" && holdLines.length ? `<div class="settings-sheet" role="dialog" aria-modal="true" aria-label="${anyHeld?"Held for balance":"Ahead of the chain"}"><div class="settings-sheet-inner">
+    <div class="settings-head"><h2>${anyHeld?"Held for balance":"Ahead of the chain"}</h2><button class="icon-btn" data-act="dismiss-hold" aria-label="Close">${I.x}</button></div>
     <div class="settings-body" style="justify-content:center">
-      <p class="note" style="text-align:center;margin:0 0 1rem">Improve the bigger lift first — upwards chain only.</p>
-      ${holdLines.map(line => `<p class="note" style="text-align:center;margin:0 0 .75rem;color:var(--fg)">${line}</p>`).join("")}
+      <p class="note" style="text-align:center;margin:0 0 1rem">A lift can run up to ${fmtKg(CHAIN_ALLOWANCE_KG)} kg ahead of the lift above it in the chain. Improve the bigger lift first.</p>
+      ${holdLines.map(line => `<p class="note" data-chain-line style="text-align:center;margin:0 0 .75rem;color:var(--fg)">${line}</p>`).join("")}
       <div class="split" style="margin-top:1rem">
         <button class="primary" data-act="dismiss-hold" style="width:100%">Got it</button>
       </div>

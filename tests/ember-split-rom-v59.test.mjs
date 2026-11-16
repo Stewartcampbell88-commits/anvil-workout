@@ -131,7 +131,7 @@ test("ROM gate: No holds the weight + target and asks again next session", async
   const bwAsk = await sess(app, { id: "em-deadbug", patch: { reps: 8, streak: 2 }, dry: true });
   assert.deepEqual(bwAsk, []);
   // Chain-held lift: no ROM question (it can't move anyway); balance popup still works
-  const held = await sess(app, { id: "em-row", patch: { reps: 12, weight: 20, streak: 2 }, progress: { "em-bench": { reps: 8, weight: 20 }, "em-squat": { reps: 8, weight: 0 } }, dry: true });
+  const held = await sess(app, { id: "em-row", patch: { reps: 12, weight: 60, streak: 2 }, progress: { "em-bench": { reps: 8, weight: 20 }, "em-squat": { reps: 8, weight: 0 } }, dry: true });
   assert.deepEqual(held, []);
   assert.deepEqual(app.errors, []);
   await app.close();

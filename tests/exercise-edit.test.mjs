@@ -102,12 +102,12 @@ test("progression uses the edits: rungs 8→10→12 then +5 kg back to 8; AMRAP 
   await p.evaluate(() => setDay(0));
   await p.evaluate(() => { const i = state.exercises.findIndex((e) => e.id === "squat"); state.exercises[i] = { ...state.exercises[i], failStreak: 2 }; });
   r = await logLift(p, "squat", 5); assert.deepEqual([r.weight, r.failStreak], [65, 0], "reset week drops one 5 kg step");
-  // Balance: bench 5 kg step would pass squat (65) → held
+  // Balance: bench 5 kg step would pass squat (65) + 40 kg allowance (v62) → held
   await p.evaluate(() => setDay(0));
   await editLift(p, "bench", { kgStep: 5 });
-  await p.evaluate(() => { const i = state.exercises.findIndex((e) => e.id === "bench"); state.exercises[i] = { ...state.exercises[i], reps: 12, weight: 63, streak: 2 }; });
+  await p.evaluate(() => { const i = state.exercises.findIndex((e) => e.id === "bench"); state.exercises[i] = { ...state.exercises[i], reps: 12, weight: 103, streak: 2 }; });
   r = await logLift(p, "bench");
-  assert.equal(r.weight, 63); assert.ok(r.notes.some((n) => /held for balance/.test(n)));
+  assert.equal(r.weight, 103); assert.ok(r.notes.some((n) => /held for balance/.test(n)));
   // Unedited lifts unchanged: row still 2.5 kg on the default wave
   await p.evaluate(() => setDay(0));
   await p.evaluate(() => { const i = state.exercises.findIndex((e) => e.id === "row"); state.exercises[i] = { ...state.exercises[i], reps: 12, weight: 40, streak: 2 }; });
