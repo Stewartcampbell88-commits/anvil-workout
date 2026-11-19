@@ -145,27 +145,86 @@ function resetChecks(){
   clockClear();
   save(); render();
 }
+// ---- v63 per-day drafts: an unlogged session is parked when you switch away and restored when you come back ----
+/** Anything typed into this day that a switch must not lose: ticked / half / missed sets, rep tweaks, skips. */
+function hasDraftWork(exs){
+  return (exs || []).some(e => e.skipped || (e.setsLog || []).some(s => s.ok || s.miss || s.half || s.reps != null));
+}
+function sanitizeDayDrafts(o){
+  const out = {};
+  if (!o || typeof o !== "object" || Array.isArray(o)) return out;
+  for (const [k, v] of Object.entries(o)) {
+    if (!/^[\w-]+:\d+$/.test(k) || !Array.isArray(v)) continue;
+    const list = hydrate(v.slice(0, 60));
+    if (list && hasDraftWork(list)) out[k] = list;
+  }
+  return out;
+}
+/** Park the on-screen lift list under its program:day (or drop the draft when nothing is in progress). */
+function stashDayDraft(){
+  if (state.mobile) return;
+  const key = dayOrderKey(), drafts = {...(state.dayDrafts || {})};
+  if (hasDraftWork(state.exercises)) drafts[key] = state.exercises.map(e => ({...e, setsLog: (e.setsLog || []).map(s => ({...s}))}));
+  else delete drafts[key];
+  state.dayDrafts = drafts;
+}
+/** The day as it should appear: fresh list (current targets, order, weekly special) with any parked draft laid over it.
+ *  Targets always come from liftProgress so progress logged on another day in between is never undone. */
+function dayWithDraft(pid, day, progress){
+  const base = dayList(pid, day, progress);
+  const key = `${pid}:${day}`, drafts = {...(state.dayDrafts || {})};
+  const draft = drafts[key];
+  delete drafts[key];
+  state.dayDrafts = drafts;
+  if (!draft || !draft.length) return base;
+  const byId = new Map(base.map(e => [e.id, e]));
+  const out = [];
+  for (const d of draft) {
+    let src = byId.get(d.id);
+    if (!src) {
+      if (isWeeklySpecial(d)) continue; // the special rotated meanwhile
+      const h = hydrate([d]);
+      if (!h) continue;
+      src = applyProgress(h, progress || {}, pid)[0];
+    }
+    byId.delete(d.id);
+    const sets = src.sets;
+    const log = (d.setsLog || []).slice(0, sets).map(x => ({...x}));
+    while (log.length < sets) log.push({ok:false, miss:false});
+    out.push({...src, setsLog: log, skipped: !!d.skipped, ...(d.skipped && d.skipReason ? { skipReason: d.skipReason } : {}), ...(d.skipped && d.skipNote ? { skipNote: d.skipNote } : {})});
+  }
+  // Lifts the day gained since the draft was parked keep their usual slot
+  base.forEach((e, i) => { if (byId.has(e.id)) out.splice(Math.min(i, out.length), 0, e); });
+  return out;
+}
 function setProgram(id, dayIndex=0){
   if (state.mobile) { swapMobility(false); stopRest(); }
   const program = getProgram(id);
   const day = Math.min(Math.max(0, dayIndex), program.days.length-1);
   const progress = captureProgress(state.exercises, state.liftProgress);
+  stashDayDraft();
+  const parked = hasDraftWork(state.exercises);
   state = {...state, programId: program.id, dayIndex: day, liftProgress: progress};
-  state.exercises = dayList(program.id, day, progress);
+  state.exercises = dayWithDraft(program.id, day, progress);
   clearExpandedEx();
-  clockClear();
+  if (!parked && !hasDraftWork(state.exercises)) clockClear();
   save(); render();
 }
-function setDay(dayIndex){
+/** opts.fresh: the day being left was just logged — don't park it (logging clears that day's draft). */
+function setDay(dayIndex, opts = {}){
   if (state.mobile) { swapMobility(false); stopRest(); }
   const program = getProgram(state.programId);
   const day = Math.min(Math.max(0, dayIndex), program.days.length-1);
   const progress = captureProgress(state.exercises, state.liftProgress);
+  if (opts.fresh) { const d = {...(state.dayDrafts || {})}; delete d[dayOrderKey()]; state.dayDrafts = d; }
+  else stashDayDraft();
+  const parked = !opts.fresh && hasDraftWork(state.exercises);
   state.dayIndex = day;
   state.liftProgress = progress;
-  state.exercises = dayList(state.programId, day, progress);
+  state.exercises = dayWithDraft(state.programId, day, progress);
   clearExpandedEx();
-  clockClear();
+  // The workout clock keeps running while a session is parked or resumed; otherwise it resets as before.
+  if (!parked && !hasDraftWork(state.exercises)) clockClear();
   save(); render();
 }
 /** v57: at = insert index (0 = Top, length/undefined = End). Order is remembered per program + day. */
@@ -814,7 +873,7 @@ function finishLog(rom){
   const notes = logSession({ rom });
   const program = getProgram(state.programId);
   if (program.days.length > 1) {
-    setDay((state.dayIndex + 1) % program.days.length);
+    setDay((state.dayIndex + 1) % program.days.length, { fresh: true });
   }
   const romHeld = Object.entries(rom || {}).filter(([, ok]) => ok === false).map(([id]) => state.history[0]?.lifts?.find(l => l.id === id)?.name || id);
   if (romHeld.length) toast("Session logged", `${ROM_HOLD_MSG} ${romHeld.join(", ")}: same kg next time.`);

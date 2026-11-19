@@ -61,7 +61,11 @@ test("EMBER v58 save migrates: new lifts slot in after row / RDL, custom order +
   // Day B honours the saved order with BSS right after the RDL; back on A uses Alexis's order with Cossack after row
   const b = await app.page.evaluate(() => { setDay(1); return state.exercises.map((e) => e.id); });
   assert.deepEqual(b, ["em-press", "em-rdl", "em-bss", "em-heaves", "em-plank", "em-neck"]);
-  const a = await app.page.evaluate(() => { setDay(0); return state.exercises.map((e) => e.id); });
+  // v63: Day A had a ticked set, so coming back restores that in-progress session as it was (incl. curl)
+  const a0 = await app.page.evaluate(() => { setDay(0); return state.exercises.map((e) => e.id); });
+  assert.deepEqual(a0, ["em-squat", "em-bench", "em-row", "em-cossack", "em-deadbug", "em-neck", "curl"]);
+  // …and a fresh Day A (nothing in progress) follows Alexis's saved order
+  const a = await app.page.evaluate(() => { resetChecks(); setDay(1); setDay(0); return state.exercises.map((e) => e.id); });
   assert.deepEqual(a, ["em-deadbug", "em-squat", "em-bench", "em-row", "em-cossack", "em-neck"]);
   // Idempotent: reload twice, still exactly one of each
   await reload(app); await reload(app);

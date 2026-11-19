@@ -251,6 +251,8 @@ function load(){
       mobilityLevels,
       dayOrder,
       weeklySpecial,
+      // v63 parked unlogged sessions per program:day (never the day on screen)
+      dayDrafts: (() => { const d = sanitizeDayDrafts(raw.dayDrafts); delete d[`${program.id}:${dayIndex}`]; return d; })(),
       mobile: false,
       altExercises: hydrateMobility(raw.mobility?.exercises, exerciseEdits, mobilityLevels),
     };
@@ -288,6 +290,7 @@ function saveState(){
     mobility: mobilityBlob(),
     loudCuesV33: true, anvilLayoutV38: true, anvilXrdlV49: true, neckIsoV50: true, anvilPsoasSitupV58: true, emberSplitV59: true, anvilPsoasDoubleV60: true, anvilWeeklySpecialV61: true,
     weeklySpecial: sanitizeWeeklySpecial(state.weeklySpecial),
+    dayDrafts: sanitizeDayDrafts(state.dayDrafts),
     exerciseEdits: sanitizeEdits(state.exerciseEdits),
     mobilityLevels: sanitizeMobLevels(state.mobilityLevels),
     dayOrder: sanitizeDayOrder(state.dayOrder),
